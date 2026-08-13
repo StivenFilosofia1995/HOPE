@@ -252,15 +252,90 @@ es ausencia de problema, solo ausencia de medición ahí.**
 
 ---
 
+## Operadores eléctricos y telcos: buscado a fondo el 2026-08-13
+
+La pregunta obvia es «¿por qué no pegarse directo a la API del operador que
+sabe si hay luz?». La respuesta corta: **no existe.** La larga, para que nadie
+tenga que repetir la búsqueda:
+
+### Distribuidoras eléctricas
+
+| Operador | Zona | Qué hay | Por qué no sirve |
+|---|---|---|---|
+| **EPM** | Antioquia | Página AEM con interrupciones | Solo **programadas**. Sin API: se probó interceptando la red del navegador y no hay endpoint de datos. Además Antioquia no es zona del sismo. |
+| **Enel** | Bogotá, Cundinamarca | Mapa de cortes | Página con protección anti-bot; no devuelve JSON propio. |
+| **Celsia** | Valle, Tolima, Cauca | Portal de clientes | Ninguna respuesta JSON propia al cargar. |
+| **CHEC** | **Caldas** | App ArcGIS pública | La app (`4b557aa0…`) resultó ser **«SEDES COMERCIALES»**, oficinas, no cortes. |
+| **EMCALI** | Cali | Línea 177 | Se reporta por teléfono. Sin API. |
+| **EDEQ / DISPAC / CEDENAR** | Quindío, Chocó, Nariño | — | Sin endpoint público. |
+
+**Conclusión: ninguna distribuidora colombiana publica cortes en tiempo real
+por API.** Lo que hay son páginas para consulta humana, varias detrás de
+protección anti-bot. Apoyar una herramienta de emergencia en raspar esas
+páginas es construir sobre algo que se rompe sin aviso y sin nadie a quien
+reclamarle.
+
+### Telcos
+
+Claro, Tigo, Movistar y ETB: **sin página de estado con API**. Se probaron
+además los patrones habituales (`status.<dominio>/api/v2/status.json`, de
+Statuspage) y ninguno responde. No hay equivalente colombiano a un status page
+de operador.
+
+### datos.gov.co (Socrata) — API real, datos viejos
+
+Esta **sí** es una API de verdad y documentada: `https://www.datos.gov.co/resource/{id}.json`
+con lenguaje de consulta SoQL (`$select`, `$where`, `$order`, `$limit`).
+El problema es la frescura:
+
+| Conjunto | Qué trae | Último dato |
+|---|---|---|
+| `3a44-zwt6` | Generación **diaria** por localidad en Zonas No Interconectadas, con horas de encendido/apagado y causal de no generación | **2023-06-30** |
+| `3ebi-d83g` | Energía por localidad ZNI, mensual | 2026-01 en general, pero **Chocó se detiene en 2022-08** |
+| `as4w-pgry` | Índice de calidad ITAD por empresa | Trimestral |
+
+El de generación diaria en ZNI habría sido excelente — granularidad de
+**localidad** justo donde IODA y XM son ciegos, que es el Chocó rural. Lleva
+tres años sin actualizarse.
+
+### OONI — probado y descartado como detector de cortes
+
+`https://api.ooni.io/api/v1/aggregation?probe_cc=CO&since=…&axis_x=measurement_start_day`
+Gratis, sin llave, y mide desde **dispositivos reales dentro del país** (al
+revés que IODA, que sondea desde fuera). Unas 11.000 mediciones diarias en
+Colombia, con ASN.
+
+Suena ideal y no sirve para esto. La tasa de anomalías fue:
+
+```
+2026-08-03  1,84%   ← día normal
+2026-08-08  1,23%
+2026-08-09  1,42%
+2026-08-10  1,98%   ← día del sismo
+2026-08-11  1,90%
+```
+
+El día del sismo (1,98%) apenas supera un martes cualquiera (1,84%). **La
+variación normal se come la señal.** Y por diseño de privacidad OONI no publica
+ubicación por debajo del país, así que tampoco aporta geografía. Se deja
+documentado para no volver a intentarlo.
+
+---
+
 ## Lo que NO existe — verificado, no volver a buscar
 
 - **Feed de personas atrapadas en tiempo real.** No lo tiene nadie. Solo reportes humanos.
 - **Búsqueda de Instagram por hashtag o ubicación.** La API con Instagram Login
   no la soporta y `GET_IG_USER_TAGS` está deprecado. Solo se lee la propia cuenta.
 - **API pública de cortes de los operadores eléctricos colombianos**
-  (EPM, Celsia, Enel, Air-e, Afinia, DISPAC, CHEC, EDEQ). Tienen mapas web, no
-  endpoints documentados ni estables. No apoyarse en scraping para una
-  herramienta de emergencia.
+  (EPM, Celsia, Enel, Air-e, Afinia, DISPAC, CHEC, EDEQ). Verificado a fondo el
+  2026-08-13 interceptando la red de sus propias páginas: ver la sección de
+  arriba. No apoyarse en raspado para una herramienta de emergencia.
+- **Página de estado con API de las telcos** (Claro, Tigo, Movistar, ETB).
+  Tampoco usan Statuspage ni equivalente.
+- **Alguna fuente que dé cortes de energía por municipio en tiempo real.**
+  No la hay en Colombia. Lo más cerca es XM por área operativa con 1-2 días de
+  rezago, y VIIRS Black Marble por satélite si se procesa bien.
 - **Granularidad municipal en IODA para Colombia.** Cero counties.
 - **XM en tiempo real.** Probado: 400 por área, sin datos recientes por sistema.
 
