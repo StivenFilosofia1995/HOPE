@@ -30,15 +30,53 @@ Dos decisiones ya tomadas en el código por esta razón:
 
 ---
 
-## Correr
+## Puesta en marcha
+
+### 1. Aplicar el esquema en Supabase
+
+Supabase → **SQL Editor** → New query → pegar todo [`supabase/schema.sql`](supabase/schema.sql) → **Run**.
+Es idempotente: se puede volver a correr sin romper nada. Este paso es manual
+porque el DDL no pasa por la API REST.
+
+### 2. Verificar que los permisos hacen lo que dicen
+
+```bash
+python supabase/verificar.py
+```
+
+Comprueba con la **anon key** —la misma que va en el navegador— que cualquiera
+puede leer el mapa e insertar reportes, y que **nadie puede leer `contactos`**
+ni editar o borrar lo ajeno. Si falla la prueba de `contactos`, hay una fuga de
+datos personales: no publicar hasta resolverla.
+
+Si las tablas no existen, el verificador se detiene en vez de dar "OK" — sin
+tablas todo devuelve 404 y las pruebas de seguridad pasarían por el motivo
+equivocado.
+
+### 3. Correr en local
 
 ```bash
 pip install -r requirements.txt
 ```
 
+Copiar `.env.example` a `.env` y poner la URL y la anon key. Luego:
+
 ```bash
 uvicorn backend.main:app --reload --port 8000
 ```
+
+### 4. Desplegar en Railway
+
+El repo ya trae `Procfile` y `railway.json` con healthcheck en `/api/salud`.
+En Railway: **New Project → Deploy from GitHub repo**, y en **Variables**:
+
+| Variable | Valor |
+|---|---|
+| `SUPABASE_URL` | la URL del proyecto |
+| `SUPABASE_ANON_KEY` | la clave anónima |
+
+`PORT` lo inyecta Railway solo. **No pongas ahí la `service_role` key**: ni el
+frontend ni este backend la necesitan, y quien la tenga salta todo el RLS.
 
 Abre <http://127.0.0.1:8000>. El backend sirve la API y el frontend estático.
 La documentación interactiva de la API queda en `/docs`.
@@ -188,16 +226,60 @@ número congelado en un JSON desinforma. Esas las publica la UNGRD.
 
 ---
 
+## Zonas y aportes: la parte pública
+
+Dos objetos, en Supabase, con actualización en tiempo real:
+
+- **Zona** — un lugar que *necesita* algo: buscar personas, energía, internet,
+  revisión de infraestructura, albergue, salud, agua, vía bloqueada.
+- **Aporte** — alguien que *ofrece* algo: Starlink, generador, panel solar,
+  batería, internet móvil, combustible, transporte, personal técnico.
+
+Cuando alguien publica una zona en Cali, aparece en la pantalla de todos los
+demás sin recargar. Es una suscripción de Postgres, no un sondeo.
+
+### El modelo de permisos, y por qué es así
+
+| Quién | Puede | No puede |
+|---|---|---|
+| Cualquiera (`anon`) | Leer zonas y aportes, insertar los suyos | Editar o borrar nada, leer `contactos` |
+| `service_role` | Todo | — (por eso no va al navegador) |
+
+Tres decisiones que conviene no revertir:
+
+**Los datos personales viven aparte.** `zonas` y `aportes` no tienen ni un campo
+de contacto. Los teléfonos van a `contactos`, donde `anon` puede insertar pero
+nunca leer. No es exceso de celo: esas dos tablas están publicadas en Realtime,
+y cualquiera con la anon key —que es pública por diseño— puede suscribirse y
+recibir cada fila nueva. Si el teléfono estuviera ahí, se estaría transmitiendo
+el directorio de personas vulnerables a quien abra la consola del navegador.
+
+**Nadie anónimo edita ni borra.** Si `anon` pudiera hacer UPDATE, una sola
+persona marcaría todas las zonas como resueltas y borraría la emergencia del
+mapa. La curaduría se hace con `service_role`, fuera del navegador.
+
+**Nada nace verificado.** La política de INSERT rechaza `verificado = true`.
+Un reporte sin confirmar que se trata como hecho desvía equipos de rescate.
+
+Además hay un freno de inundación en Postgres: si entran 60 o más registros en
+un minuto, el trigger los rechaza. No sustituye el rate limiting del gateway de
+Supabase; es la última línea, la que sigue en pie aunque alguien use la anon key
+desde un script.
+
 ## Estructura
 
 ```
-backend/main.py       FastAPI + SQLite. Sin ORM, sin dependencias extra.
-data/hope.db          Se crea sola al arrancar. No versionar.
-web/index.html        Estructura
-web/style.css         Estilos
-web/app.js            Mapa (Leaflet), capas, captura, filtros, import/export
-web/data/evento.json  Parámetros del sismo + fuentes
-web/data/ciudades.json
+backend/main.py         FastAPI: API de apuntes internos + proxy IODA/XM + /api/config
+backend/fuentes.py      Conectores a IODA y XM, con caché
+supabase/schema.sql     Esquema, RLS y Realtime. Aplicar a mano en el SQL Editor
+supabase/verificar.py   Comprueba que los permisos hacen lo que dicen
+web/index.html          Estructura
+web/style.css           Estilos
+web/zonas.js            Supabase: zonas, aportes, tiempo real, formularios públicos
+web/app.js              Mapa (Leaflet), capas del sismo, cortes, capa interna
+web/data/*.json         Parámetros del sismo y ciudades
+Procfile, railway.json  Despliegue
+data/hope.db            Local, se crea sola. No versionar: tiene datos personales.
 ```
 
 ## API
