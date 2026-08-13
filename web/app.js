@@ -196,7 +196,9 @@ function crearMapa() {
       'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
       { attribution: atribOSM + ', <a href="https://opentopomap.org">OpenTopoMap</a>', maxZoom: 17 }),
   };
-  bases['Oscuro (CARTO)'].addTo(S.mapa);
+  // OpenStreetMap por defecto: es el que más gente reconoce. Las otras tres
+  // quedan disponibles en el selector de capas, arriba a la derecha.
+  bases['OpenStreetMap'].addTo(S.mapa);
   L.control.layers(bases, null, { position: 'topright' }).addTo(S.mapa);
 
   S.capas = {
@@ -561,10 +563,50 @@ function radioCorte(score) {
   return Math.max(9, Math.min(46, 7 + Math.log10(score) * 4.2));
 }
 
+// ── Iconos pedagógicos (SVG en línea, sin depender de fuentes externas) ────
+// Mismo símbolo en el mapa y en la leyenda: arcos de wifi (tachados si hay
+// corte, con "?" si es punto ciego) y rayo tachado para energía no entregada.
+// Así se entiende de un vistazo sin tener que leer el popup.
+
+function svgWifi(color, estado) {
+  const debil = estado === 'corte' ? .5 : 1;
+  const tachado = estado === 'corte'
+    ? `<line x1="3" y1="21" x2="21" y2="3" stroke="${color}" stroke-width="2.6" stroke-linecap="round"/>`
+    : '';
+  const duda = estado === 'duda'
+    ? `<text x="12" y="12.8" text-anchor="middle" font-size="9" font-weight="700" fill="${color}">?</text>`
+    : '';
+  return `<svg viewBox="0 0 24 24" width="100%" height="100%">
+    <circle cx="12" cy="19" r="1.7" fill="${color}"/>
+    <path d="M7 15.2a7.3 7.3 0 0 1 10 0" fill="none" stroke="${color}" stroke-width="2.1" stroke-linecap="round"/>
+    <path d="M3.3 11a12.4 12.4 0 0 1 17.4 0" fill="none" stroke="${color}" stroke-width="2.1"
+          stroke-linecap="round" opacity="${debil}"/>
+    ${tachado}${duda}
+  </svg>`;
+}
+
+function svgRayoCorte(color) {
+  return `<svg viewBox="0 0 24 24" width="100%" height="100%">
+    <path d="M13 2 5 14h5.5l-1 8L19 10h-5.5l-.5-8Z" fill="${color}"/>
+    <line x1="3" y1="21" x2="21" y2="3" stroke="${color}" stroke-width="2.6" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function iconoGlifo(svgHtml, px) {
+  return L.divIcon({
+    className: 'icono-glifo',
+    html: `<div class="glifo-fondo">${svgHtml}</div>`,
+    iconSize: [px, px],
+    iconAnchor: [px / 2, px / 2],
+  });
+}
+
 function pintarCapaCortes(prio) {
   prio.zonas.forEach((z) => {
     const c = CLASES_CORTE[z.clase] || CLASES_CORTE.sin_senal;
     const ciego = z.clase === 'punto_ciego';
+    const cortado = z.clase === 'colapso_medido' || z.clase === 'degradacion_fuerte' ||
+                    z.clase === 'degradacion_leve';
 
     L.circleMarker([z.lat, z.lon], {
       radius: radioCorte(z.score),
@@ -581,6 +623,14 @@ function pintarCapaCortes(prio) {
         if (b) b.onclick = () => verEventosCorte(z.codigo);
       })
       .addTo(S.capas.cortes);
+
+    // Icono encima del círculo: wifi normal, tachado o con "?". No es
+    // interactivo — el clic y el popup siguen siendo del círculo de abajo.
+    L.marker([z.lat, z.lon], {
+      icon: iconoGlifo(svgWifi(c.color, ciego ? 'duda' : cortado ? 'corte' : 'ok'), 20),
+      interactive: false,
+      keyboard: false,
+    }).addTo(S.capas.cortes);
   });
   actualizarCuenta('cortes', prio.zonas.length);
 }
@@ -607,12 +657,12 @@ function pintarCapaEnergia(energia) {
   let n = 0;
   energia.areas.forEach((a) => {
     if (!a.lat || !a.pico_kwh) return;
-    // Cuadrado para distinguir energía de internet a simple vista.
-    const lado = Math.max(10, Math.min(34, Math.log10(a.pico_kwh) * 5));
+    // Rayo tachado: mismo lenguaje visual que "sin internet", para energía.
+    const lado = Math.max(18, Math.min(40, Math.log10(a.pico_kwh) * 5 + 6));
     L.marker([a.lat, a.lon], {
       icon: L.divIcon({
         className: 'marca-energia',
-        html: `<div style="width:${lado}px;height:${lado}px"></div>`,
+        html: `<div class="glifo-fondo">${svgRayoCorte('#00d4ff')}</div>`,
         iconSize: [lado, lado],
         iconAnchor: [lado / 2, lado / 2],
       }),
@@ -1195,8 +1245,22 @@ function construirLeyenda() {
     });
   };
 
-  bloque('Corte de internet (círculo, área = escala log del score)',
-    Object.values(CLASES_CORTE).map((c) => [c.color, c.etiqueta]));
+  // Corte de internet: iconos en vez de solo color — mismo lenguaje que el mapa.
+  const hIn = document.createElement('div');
+  hIn.className = 'leyenda-titulo';
+  hIn.textContent = 'Corte de internet (círculo = escala log del score)';
+  cont.appendChild(hIn);
+  [
+    ['ok',    CLASES_CORTE.sin_senal.color,        'Con servicio — sin corte detectado'],
+    ['corte', CLASES_CORTE.degradacion_leve.color, 'Corte detectado (leve a colapso)'],
+    ['duda',  CLASES_CORTE.punto_ciego.color,      CLASES_CORTE.punto_ciego.etiqueta],
+  ].forEach(([estado, color, txt]) => {
+    const f = document.createElement('div');
+    f.className = 'leyenda-fila';
+    f.innerHTML = `<span class="muestra glifo">${svgWifi(color, estado)}</span><span>${txt}</span>`;
+    cont.appendChild(f);
+  });
+
   bloque('Prioridad del reporte (borde)',
     Object.values(PRIORIDADES).map((p) => [p.color, p.etiqueta]));
   bloque('Tipo de necesidad (relleno)',
@@ -1216,11 +1280,11 @@ function construirLeyenda() {
   eti.innerHTML = '<span>I no sentido</span><span>V moderado</span><span>X extremo</span>';
   cont.appendChild(eti);
 
-  const cuad = document.createElement('div');
-  cuad.className = 'leyenda-fila';
-  cuad.innerHTML = '<span class="muestra cuadro"></span>' +
-                   '<span>Cuadro = energía no entregada (área XM)</span>';
-  cont.appendChild(cuad);
+  const filaEnergia = document.createElement('div');
+  filaEnergia.className = 'leyenda-fila';
+  filaEnergia.innerHTML = `<span class="muestra glifo">${svgRayoCorte('#00d4ff')}</span>` +
+                          '<span>Rayo tachado = energía no entregada (área XM)</span>';
+  cont.appendChild(filaEnergia);
 
   const nota = document.createElement('p');
   nota.className = 'hint';
