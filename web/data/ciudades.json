@@ -1,0 +1,149 @@
+{
+  "_meta": {
+    "descripcion": "Ciudades y municipios de referencia para el mapa. Las coordenadas son de cabecera municipal y son estables. El campo 'danos_prensa' NO es información verificada: proviene de prensa de las primeras horas y sirve solo para orientar la mirada, no para tomar decisiones operativas.",
+    "advertencia_cifras": "No se incluyen conteos de víctimas. Cambian por hora y cualquier cifra que se cablee en un archivo queda desactualizada y desinforma. Las cifras oficiales las publica la UNGRD.",
+    "consultado": "2026-08-12"
+  },
+  "ciudades": [
+    {
+      "nombre": "San José del Palmar",
+      "departamento": "Chocó",
+      "lat": 4.8956,
+      "lon": -76.2289,
+      "poblacion_aprox": 4800,
+      "relevancia": "epicentro",
+      "danos_prensa": "Municipio sobre el epicentro. Población pequeña y de difícil acceso terrestre.",
+      "verificado": false
+    },
+    {
+      "nombre": "Quibdó",
+      "departamento": "Chocó",
+      "lat": 5.6947,
+      "lon": -76.6611,
+      "poblacion_aprox": 130000,
+      "relevancia": "alta",
+      "danos_prensa": "Daños estructurales reportados. Capital departamental con acceso terrestre limitado y alta dependencia aérea/fluvial.",
+      "verificado": false
+    },
+    {
+      "nombre": "Cali",
+      "departamento": "Valle del Cauca",
+      "lat": 3.4516,
+      "lon": -76.532,
+      "poblacion_aprox": 2280000,
+      "relevancia": "alta",
+      "danos_prensa": "Colapsos parciales de edificaciones y desprendimiento de fachadas.",
+      "verificado": false
+    },
+    {
+      "nombre": "Pereira",
+      "departamento": "Risaralda",
+      "lat": 4.8133,
+      "lon": -75.6961,
+      "poblacion_aprox": 480000,
+      "relevancia": "alta",
+      "danos_prensa": "Daños estructurales reportados.",
+      "verificado": false
+    },
+    {
+      "nombre": "Manizales",
+      "departamento": "Caldas",
+      "lat": 5.0689,
+      "lon": -75.5174,
+      "poblacion_aprox": 440000,
+      "relevancia": "alta",
+      "danos_prensa": "Derrumbes en edificaciones reportados. Ciudad con alta pendiente y antecedentes de remoción en masa.",
+      "verificado": false
+    },
+    {
+      "nombre": "Armenia",
+      "departamento": "Quindío",
+      "lat": 4.5339,
+      "lon": -75.6811,
+      "poblacion_aprox": 300000,
+      "relevancia": "alta",
+      "danos_prensa": "Daños estructurales reportados.",
+      "verificado": false
+    },
+    {
+      "nombre": "Buenaventura",
+      "departamento": "Valle del Cauca",
+      "lat": 3.8801,
+      "lon": -77.0313,
+      "poblacion_aprox": 310000,
+      "relevancia": "media",
+      "danos_prensa": "Sin reporte consolidado. Zona costera con suelos blandos, susceptible a amplificación.",
+      "verificado": false
+    },
+    {
+      "nombre": "Cartago",
+      "departamento": "Valle del Cauca",
+      "lat": 4.7467,
+      "lon": -75.9117,
+      "poblacion_aprox": 130000,
+      "relevancia": "media",
+      "danos_prensa": "Sin reporte consolidado. Muy cercana al epicentro.",
+      "verificado": false
+    },
+    {
+      "nombre": "Tuluá",
+      "departamento": "Valle del Cauca",
+      "lat": 4.0847,
+      "lon": -76.1954,
+      "poblacion_aprox": 220000,
+      "relevancia": "media",
+      "danos_prensa": "Sin reporte consolidado.",
+      "verificado": false
+    },
+    {
+      "nombre": "Istmina",
+      "departamento": "Chocó",
+      "lat": 5.1594,
+      "lon": -76.6847,
+      "poblacion_aprox": 26000,
+      "relevancia": "media",
+      "danos_prensa": "Sin reporte consolidado. Municipio cercano al epicentro, acceso fluvial.",
+      "verificado": false
+    },
+    {
+      "nombre": "Medellín",
+      "departamento": "Antioquia",
+      "lat": 6.2442,
+      "lon": -75.5812,
+      "poblacion_aprox": 2600000,
+      "relevancia": "baja",
+      "danos_prensa": "Sismo sentido, sin daños graves reportados. Base logística viable.",
+      "verificado": false
+    },
+    {
+      "nombre": "Bogotá",
+      "departamento": "Cundinamarca",
+      "lat": 4.711,
+      "lon": -74.0721,
+      "poblacion_aprox": 7900000,
+      "relevancia": "baja",
+      "danos_prensa": "Sismo sentido. Sede de UNGRD y coordinación nacional.",
+      "verificado": false
+    },
+    {
+      "nombre": "Popayán",
+      "departamento": "Cauca",
+      "lat": 2.4448,
+      "lon": -76.6147,
+      "poblacion_aprox": 320000,
+      "relevancia": "baja",
+      "danos_prensa": "Sismo sentido.",
+      "verificado": false
+    },
+    {
+      "nombre": "Ibagué",
+      "departamento": "Tolima",
+      "lat": 4.4389,
+      "lon": -75.2322,
+      "poblacion_aprox": 530000,
+      "relevancia": "baja",
+      "danos_prensa": "Sismo sentido.",
+      "verificado": false
+    }
+  ]
+}

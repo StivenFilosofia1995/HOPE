@@ -7,8 +7,9 @@
 !.env.example
 
 # Base de datos local: la capa de apuntes internos incluye el campo
-# contacto, que es dato personal.
-data/
+# contacto, que es dato personal. Anclado a la raíz: NO debe atrapar
+# web/data/ (JSON públicos del evento y ciudades que sí van al repo).
+/data/
 *.db
 *.db-wal
 *.db-shm

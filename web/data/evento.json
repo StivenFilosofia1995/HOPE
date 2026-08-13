@@ -1,0 +1,52 @@
+{
+  "_meta": {
+    "descripcion": "Parámetros del sismo principal y contexto. Valores tomados del USGS FDSN Event API.",
+    "fuente_primaria": "USGS — https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&eventid=us6000tjl2",
+    "consultado": "2026-08-12",
+    "advertencia": "El SGC (Servicio Geológico Colombiano) es la autoridad sismológica en Colombia y sus valores pueden diferir de los del USGS (el SGC reportó profundidad entre 96 y 120,5 km). Este archivo usa USGS por tener API pública documentada. Contrastar antes de usar en cualquier producto oficial."
+  },
+  "evento": {
+    "id_usgs": "us6000tjl2",
+    "magnitud": 7.4,
+    "tipo_magnitud": "mww",
+    "lugar": "5 km S of San José del Palmar, Colombia",
+    "lugar_es": "5 km al sur de San José del Palmar, Chocó",
+    "lat": 4.8436,
+    "lon": -76.2422,
+    "profundidad_km": 110.285,
+    "tiempo_utc": "2026-08-10T12:34:28.125Z",
+    "tiempo_local": "2026-08-10 07:34:28 (UTC-5)",
+    "alerta_pager": "red",
+    "mmi_max": 8.0,
+    "cdi_max": 7.9,
+    "reportes_sentido": 1114,
+    "significancia": 2790,
+    "tsunami": false,
+    "estado_revision": "reviewed",
+    "url_usgs": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000tjl2",
+    "notas": [
+      "Sismo profundo (110 km) de subducción: por eso se sintió en casi todo el país, Ecuador, Panamá y Venezuela.",
+      "PAGER estimó ~10,5 millones de personas expuestas a sacudida fuerte o muy fuerte.",
+      "Alerta roja de PAGER = se esperan pérdidas humanas y económicas de escala nacional."
+    ]
+  },
+  "shakemap": {
+    "contornos_mmi": "https://earthquake.usgs.gov/product/shakemap/us6000tjl2/us/1786452072000/download/cont_mi.json",
+    "imagen_intensidad": "https://earthquake.usgs.gov/product/shakemap/us6000tjl2/us/1786452072000/download/intensity.jpg",
+    "nota": "La ruta incluye una versión con timestamp. La app resuelve la URL vigente en tiempo real desde el detalle del evento y usa esta como respaldo."
+  },
+  "replicas": {
+    "endpoint": "https://earthquake.usgs.gov/fdsnws/event/1/query",
+    "parametros_sugeridos": {
+      "format": "geojson",
+      "starttime": "2026-08-10",
+      "minlatitude": 3.5,
+      "maxlatitude": 6.2,
+      "minlongitude": -77.6,
+      "maxlongitude": -74.9,
+      "minmagnitude": 2.5,
+      "orderby": "time"
+    },
+    "nota": "El SGC reportó más de 146 réplicas en las primeras horas; el USGS solo cataloga las de magnitud suficiente para su red global, así que este conteo será menor que el del SGC."
+  }
+}
