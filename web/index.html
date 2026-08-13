@@ -32,6 +32,95 @@
       <a href="#" id="link-entrega">¿A quién llegan estos datos? →</a>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════════════
+         VISTA PRINCIPAL — estado de la red AHORA.
+         Va primero porque es para lo que existe este mapa. Todo lo demás
+         (reportes de la comunidad, coordinación) queda debajo.
+         ═══════════════════════════════════════════════════════════════ -->
+    <section class="bloque vivo">
+      <div class="bloque-head">
+        <h2>Internet y energía ahora</h2>
+        <select id="f-pulso" class="mini" title="Ventana de comparación">
+          <option value="3">últimas 3 h</option>
+          <option value="6">últimas 6 h</option>
+          <option value="12">últimas 12 h</option>
+          <option value="24">últimas 24 h</option>
+        </select>
+      </div>
+
+      <div id="pulso-resumen" class="pulso-resumen"></div>
+      <div id="pulso-zonas" class="pulso-zonas"></div>
+
+      <!-- Sacar los datos de la pantalla. Es lo que convierte esto en algo
+           que le sirve a alguien: un mapa que nadie fuera de esta pestaña ve
+           no ayuda a nadie en terreno. -->
+      <div class="parte-acciones">
+        <button id="btn-parte-wa" class="btn btn-primario">
+          Enviar parte por WhatsApp
+        </button>
+        <button id="btn-parte-copiar" class="btn btn-sec">Copiar</button>
+        <button id="btn-parte-ver" class="btn btn-sec">Ver</button>
+      </div>
+      <p class="hint">Texto plano con la hora, la fuente y el rezago de cada dato,
+        listo para pegarle a un CMGRD, a la Cruz Roja o a la Defensa Civil.
+        Incluye siempre la advertencia de que no es un despacho de emergencia,
+        porque quien lo reenvíe no la va a agregar.</p>
+
+      <p class="hint" id="pulso-nota"></p>
+
+      <details class="explicador">
+        <summary>¿Qué significan estos números?</summary>
+        <p>No son «porcentaje de gente sin internet». Son <strong>la desviación
+          de cada zona contra su propio nivel normal</strong>, medido a la misma
+          hora de hace 7 días. Un −30% quiere decir que responde un 30% menos de
+          red que hace una semana, no que el 30% esté incomunicado.</p>
+        <p>Se miran dos cosas a la vez:</p>
+        <ul class="explicador-lista">
+          <li><b>Acceso</b> — la última milla: el router de la casa, la antena
+            del barrio. Se cae cuando se va la luz.</li>
+          <li><b>Troncal</b> — las rutas que el operador anuncia al mundo. Solo
+            se cae si el problema es de red, no de energía.</li>
+        </ul>
+        <p class="clave"><b>Si cae el acceso y el troncal aguanta, la fibra está
+          sana y lo que falta es energía.</b> Mandar una cuadrilla de red ahí no
+          arregla nada; hace falta una planta y combustible.</p>
+      </details>
+    </section>
+
+    <!-- ═══ Por operador ═══ -->
+    <section class="bloque">
+      <div class="bloque-head">
+        <h2>Por operador</h2>
+      </div>
+      <p class="hint">¿Es la zona o es el proveedor? Un solo operador caído en
+        varios departamentos es problema del operador; todos caídos en un mismo
+        departamento es problema de esa zona.</p>
+      <div id="pulso-operadores" class="operadores"></div>
+    </section>
+
+    <!-- ═══ Energía ═══ -->
+    <section class="bloque">
+      <div class="bloque-head">
+        <h2>Energía</h2>
+      </div>
+
+      <div class="luces">
+        <p class="hint"><strong>Luces nocturnas (NASA VIIRS).</strong> El satélite
+          pasa sobre Colombia hacia la 1:30 a.m. y ve, a unos 500 m, qué pueblo
+          quedó a oscuras. Es el dato de energía más fino y más rápido que hay.</p>
+        <div id="luces-control" class="luces-botones"></div>
+        <p class="hint aviso-nubes">Una noche nublada se ve igual de oscura que
+          una sin luz, y el Chocó es de las zonas más nubladas del mundo. Compara
+          siempre contra la noche de referencia antes de concluir un apagón.</p>
+      </div>
+
+      <div class="sub-bloque">
+        <h3>Energía no entregada (XM)</h3>
+        <div id="energia-resumen" class="energia"></div>
+        <p class="hint" id="energia-rezago"></p>
+      </div>
+    </section>
+
     <!-- ═══ Acción principal ═══ -->
     <section class="bloque acciones-principales">
       <div class="orientacion">
@@ -83,7 +172,7 @@
 
       <div class="sub-bloque">
         <div class="bloque-head">
-          <h3>Cortes medidos</h3>
+          <h3>Acumulado histórico</h3>
           <select id="f-ventana" class="mini">
             <option value="96">96 h</option>
             <option value="168">7 días</option>
@@ -91,10 +180,16 @@
             <option value="720">30 días</option>
           </select>
         </div>
-        <p class="hint">IODA mide alcanzabilidad de red y XM energía no entregada.</p>
+        <p class="hint">Score agregado de IODA sobre una ventana larga. Mira hacia
+          atrás: sirve para saber qué zona acumuló más horas de corte, no cómo
+          está ahora. Para eso está el panel de arriba.</p>
         <div id="prioridad" class="prioridad"></div>
-        <div id="energia-resumen" class="energia"></div>
         <p class="hint" id="cortes-nota"></p>
+      </div>
+
+      <div class="sub-bloque">
+        <h3>Cortes confirmados (Cloudflare Radar)</h3>
+        <div id="radar-cf"></div>
       </div>
 
       <div class="sub-bloque">
@@ -374,12 +469,28 @@
   </div>
 </div>
 
+<!-- ═══════════════ Parte de situación, para revisar antes de enviar ═══════════════ -->
+<div id="modal-parte" class="modal" hidden>
+  <div class="modal-caja">
+    <h2>Parte de situación</h2>
+    <p class="hint">Léelo antes de mandarlo. Todo lo que dice sale de una consulta
+      hecha ahora mismo; nada está guardado ni estimado.</p>
+    <pre id="parte-texto" class="parte-texto"></pre>
+    <div class="modal-acciones">
+      <button type="button" class="btn btn-sec" data-cerrar="#modal-parte">Cerrar</button>
+      <button type="button" id="btn-parte-copiar-2" class="btn btn-sec">Copiar</button>
+      <button type="button" id="btn-parte-wa-2" class="btn btn-primario">Enviar por WhatsApp</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast" hidden></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="zonas.js"></script>
+<script src="pulso.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

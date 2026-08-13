@@ -391,6 +391,139 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
   text-shadow: 0 0 3px #000, 0 0 6px #000; white-space: nowrap;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   PULSO EN VIVO — la vista principal
+   Se le da peso visual por encima de todo lo demás del panel:
+   es lo que la gente viene a mirar.
+   ═══════════════════════════════════════════════════════════ */
+
+.bloque.vivo { padding-top: 4px; }
+
+.pulso-titular {
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;
+  font-size: 13px; line-height: 1.45;
+  border: 1px solid var(--linea); background: var(--bg-2);
+}
+.pulso-titular.alerta { border-color: var(--alta); background: rgba(255, 149, 0, .08); }
+.pulso-titular.calma  { border-color: var(--baja); background: rgba(52, 199, 89, .07); }
+.pulso-titular b { display: block; color: var(--texto); font-weight: 600; }
+
+/* La firma de apagón es el hallazgo más accionable del panel: si el troncal
+   aguanta y el acceso no, hace falta energía, no fibra. Va destacada. */
+.firma-energia {
+  display: block; margin-top: 6px; padding-top: 6px;
+  border-top: 1px dashed var(--linea);
+  color: var(--alta); font-weight: 600; font-size: 12px;
+}
+
+.pulso-zonas { display: flex; flex-direction: column; gap: 8px; }
+
+.pulso-fila {
+  border: 1px solid var(--linea); border-left: 3px solid var(--c, var(--linea));
+  border-radius: 7px; padding: 9px 11px; background: var(--bg-2);
+}
+.pulso-fila header { display: flex; align-items: center; gap: 7px; }
+.pulso-fila .ico { font-size: 13px; line-height: 1; }
+.pulso-fila .nombre { font-size: 13px; font-weight: 600; }
+.pulso-fila .etiqueta {
+  margin-left: auto; font-size: 10px; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--c, var(--texto-2)); font-weight: 600;
+}
+
+.barras { display: flex; flex-direction: column; gap: 3px; margin: 7px 0 5px; }
+.barra { display: flex; align-items: center; gap: 8px; }
+.barra .rot {
+  font-size: 10px; color: var(--texto-2); width: 48px; flex: none;
+  text-transform: uppercase; letter-spacing: .4px;
+}
+.chispa { flex: 1; height: 18px; min-width: 40px; }
+.barra .delta {
+  font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 600;
+  width: 58px; text-align: right; flex: none; color: var(--texto-2);
+}
+.delta.mal  { color: var(--critica); }
+.delta.ojo  { color: var(--media); }
+.delta.bien { color: var(--baja); }
+
+.tend {
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  background: var(--bg-3); color: var(--texto-2); white-space: nowrap;
+}
+.tend.mal  { color: var(--critica); background: rgba(255, 59, 48, .12); font-weight: 600; }
+.tend.bien { color: var(--baja); background: rgba(52, 199, 89, .12); }
+
+.pulso-fila .diag { font-size: 11.5px; color: var(--texto-2); margin: 4px 0 0; line-height: 1.5; }
+.pulso-fila .accion {
+  font-size: 11.5px; margin: 6px 0 0; line-height: 1.5;
+  padding: 6px 8px; border-radius: 5px;
+}
+/* Dos acciones distintas, dos colores distintos: mandar una planta eléctrica
+   no es lo mismo que mandar una cuadrilla de fibra, y el panel no debe dejar
+   que se confundan de un vistazo. */
+.accion.falta-energia { background: rgba(255, 159, 10, .1); color: #ffc266; }
+.accion.falta-red     { background: rgba(255, 59, 48, .1);  color: #ff8c85; }
+
+/* Enviar el parte es la acción que saca los datos de esta pestaña y los pone
+   donde sirven. Va con el peso visual de una acción principal. */
+.parte-acciones { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+.parte-acciones #btn-parte-wa { flex: 1 1 100%; }
+.parte-acciones .btn-sec { flex: 1 1 0; }
+
+.parte-texto {
+  background: var(--bg); border: 1px solid var(--linea); border-radius: 6px;
+  padding: 12px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px; line-height: 1.5; color: var(--texto);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 46vh; overflow-y: auto; margin: 10px 0 0;
+}
+
+.explicador { margin-top: 12px; }
+.explicador summary {
+  cursor: pointer; font-size: 11px; color: var(--acento);
+  list-style: none; padding: 4px 0;
+}
+.explicador summary::-webkit-details-marker { display: none; }
+.explicador summary::before { content: '▸ '; }
+.explicador[open] summary::before { content: '▾ '; }
+.explicador p, .explicador li { font-size: 11.5px; color: var(--texto-2); line-height: 1.55; }
+.explicador p { margin: 8px 0 0; }
+.explicador-lista { margin: 6px 0 0; padding-left: 18px; }
+.explicador-lista li { margin-bottom: 4px; }
+.explicador .clave {
+  border-left: 2px solid var(--alta); padding-left: 9px; color: var(--texto);
+}
+
+/* ── Operadores ─────────────────────────────────────────── */
+
+.operadores { display: flex; flex-direction: column; gap: 2px; }
+.op-fila { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.op-punto { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.op-nombre { font-size: 12px; width: 116px; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-fila .chispa { height: 15px; }
+.op-fila .delta { font-size: 11px; width: 50px; text-align: right; flex: none; font-variant-numeric: tabular-nums; }
+
+/* ── Luces nocturnas ────────────────────────────────────── */
+
+.luces-botones { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.luz-btn {
+  flex: 1 1 calc(50% - 3px); display: flex; flex-direction: column;
+  align-items: flex-start; gap: 1px; padding: 7px 9px; font-size: 11.5px;
+}
+.luz-btn small { color: var(--texto-2); font-size: 10px; font-variant-numeric: tabular-nums; }
+.luz-btn.activo { border-color: var(--media); color: var(--media); background: rgba(255, 214, 10, .08); }
+.luz-btn.pendiente { opacity: .42; cursor: not-allowed; }
+.aviso-nubes { border-left: 2px solid var(--media); padding-left: 9px; }
+
+/* El rezago de XM va como sello, no como nota al pie: una cifra de anteayer
+   presentada como si fuera de ahora es la forma más fácil de que alguien
+   tome una decisión con datos vencidos. */
+.sello-rezago {
+  display: inline-block; margin-bottom: 8px; padding: 3px 8px;
+  border-radius: 4px; font-size: 10.5px; font-weight: 600;
+  background: var(--bg-3); color: var(--texto-2); border: 1px solid var(--linea);
+}
+.sello-rezago.viejo { color: var(--alta); border-color: var(--alta); }
+
 /* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 780px) {
   :root { --panel-w: 100%; }

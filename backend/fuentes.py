@@ -1,10 +1,23 @@
 """
-HOPE — conectores a fuentes REALES: cortes de internet/energía, sismicidad y clima.
+HOPE — conectores a fuentes REALES de cortes de internet y energía.
 
 Ninguna función de este módulo inventa, simula ni interpola datos. Si una fuente
 no responde, se devuelve el error; no se rellena con estimaciones.
 
-Fuentes (todas públicas, sin llave de API, verificadas el 2026-08-12):
+El módulo tiene dos mitades con propósitos distintos, y confundirlas es el error
+más fácil de cometer:
+
+  · Las funciones de ACUMULADO (`ioda_resumen`, `ioda_eventos`, `xm_no_atendida`,
+    `prioridad_enlaces`) miran hacia atrás. Resumen días. Sirven para saber qué
+    zona lleva más horas de corte, no cómo está ahora.
+
+  · Las funciones de PULSO (`pulso_vivo`, `pulso_operadores`, `luces_nocturnas`)
+    miran el presente, con series que se actualizan cada 5-10 minutos. Son la
+    vista principal del sistema. Ver el bloque grande más abajo.
+
+Catálogo completo de endpoints, ejemplos de llamada y límites: FUENTES.md.
+
+Fuentes (públicas y sin llave salvo donde se indique, verificadas el 2026-08-13):
 
   IODA — Internet Outage Detection and Analysis, Georgia Tech.
     https://api.ioda.inetintel.cc.gatech.edu/v2/
@@ -36,6 +49,17 @@ Fuentes (todas públicas, sin llave de API, verificadas el 2026-08-12):
     en todo el país, no un censo: ausencia de sonda no es ausencia de problema,
     solo ausencia de medición ahí.
 
+  NASA GIBS / VIIRS — luces nocturnas, teselas WMTS sin llave.
+    https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/
+    Lo único que ve energía a escala de PUEBLO (~500 m) sin esperar el rezago de
+    XM. El satélite pasa hacia la 1:30 a.m. Limitado por nubes, y el Chocó es de
+    las zonas más nubladas del planeta.
+
+  Cloudflare Radar — OPCIONAL, requiere llave gratuita.
+    https://api.cloudflare.com/client/v4/radar
+    La fuente más rápida que existe y la única con cortes confirmados a mano.
+    Si no está CLOUDFLARE_API_TOKEN, el sistema sigue y lo dice.
+
 Advertencia de interpretación, importante:
   Una señal DÉBIL de corte no significa "esa zona está bien". Puede significar
   que allí casi no hay infraestructura que medir. Chocó es el caso exacto: es el
@@ -47,10 +71,13 @@ Advertencia de interpretación, importante:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -58,6 +85,7 @@ IODA = "https://api.ioda.inetintel.cc.gatech.edu/v2"
 XM = "https://servapibi.xm.com.co"
 TIEMPO_ESPERA = 45
 CACHE_SEG = 600          # 10 min: suficiente para no martillar, poco para servir rancio
+CACHE_PULSO_SEG = 120    # el pulso en vivo va más corto: IODA publica cada 5-10 min
 
 # ── Departamentos: código IODA → nombre y centroide real ────────────────────
 # Los códigos salen de /v2/entities/query?entityType=region&relatedTo=country/CO
@@ -130,14 +158,14 @@ def configurar_cache(ruta_bd: str) -> None:
                     "clave TEXT PRIMARY KEY, cuerpo TEXT NOT NULL, ts REAL NOT NULL)")
 
 
-def _cache_leer(clave: str) -> Optional[Any]:
+def _cache_leer(clave: str, ttl: int = CACHE_SEG) -> Optional[Any]:
     if not _BD:
         return None
     try:
         with sqlite3.connect(_BD) as con:
             f = con.execute("SELECT cuerpo, ts FROM cache_fuentes WHERE clave = ?",
                             (clave,)).fetchone()
-        if f and (time.time() - f[1]) < CACHE_SEG:
+        if f and (time.time() - f[1]) < ttl:
             return json.loads(f[0])
     except Exception:
         pass
@@ -334,11 +362,26 @@ def xm_no_atendida(desde: date, hasta: date) -> dict:
         })
     areas_salida.sort(key=lambda x: -(x["pico_kwh"] or 0))
 
+    # Rezago real, medido en cada consulta y no supuesto. XM publica con
+    # retraso variable; verificado el 2026-08-13, el último día disponible era
+    # el 11 — dos días. Decirlo importa: quien mira esta capa tiene que saber
+    # que está viendo anteayer, no ahora. Para el estado actual está `pulso_vivo`.
+    ultimo = max(no_prog) if no_prog else None
+    rezago = (date.today() - date.fromisoformat(ultimo)).days if ultimo else None
+
     res = {
         "fuente": "XM — Sistema Interconectado Nacional",
         "metrica": "DemaNoAtenNoProg (energía no entregada por falla, kWh)",
         "desde": desde.isoformat(), "hasta": hasta.isoformat(),
         "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ultimo_dato": ultimo,
+        "rezago_dias": rezago,
+        "nota_rezago": (
+            f"El dato más reciente de XM es del {ultimo} ({rezago} día(s) de "
+            f"rezago). Esta capa es el registro contable del apagón, no su "
+            f"estado actual. Para saber qué pasa AHORA está el pulso en vivo "
+            f"y la capa de luces nocturnas."
+            if ultimo else "XM no devolvió datos en esta ventana."),
         "nota_mapeo": "Las áreas de XM son operativas (topología eléctrica), no "
                       "político-administrativas. El mapeo área→departamento es "
                       "aproximado y no debe usarse para atribuir un corte a un municipio.",
@@ -588,3 +631,659 @@ def ripe_atlas_colombia() -> dict:
     }
     _cache_guardar(clave, res)
     return res
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  PULSO EN VIVO — el corazón del sistema
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Todo lo de arriba mira hacia atrás: el score de IODA resume días, XM publica
+# con dos días de rezago. Esto mira AHORA, con dos series crudas de IODA que se
+# actualizan cada 5-10 minutos (`/signals/raw`):
+#
+#   ping-slash24 — cuántos bloques /24 del departamento responden al sondeo.
+#                  Es el acceso: la última milla, el router de la casa, la
+#                  antena del barrio. Cae cuando se va la luz o el enlace local.
+#   bgp          — cuántos prefijos del departamento siguen anunciados en la
+#                  tabla global de rutas. Es el troncal: la fibra, el operador.
+#                  Solo cae si el problema es grande y de red, no de energía.
+#
+# Cruzarlas es lo que da el diagnóstico que ninguna fuente da sola:
+#
+#   ping ↓  +  bgp =   →  se cayó la ÚLTIMA MILLA. La fibra está intacta y el
+#                        operador sigue anunciando sus rutas, pero los equipos
+#                        del usuario no contestan. Firma típica de un apagón:
+#                        sin energía no hay router, aunque el cable esté sano.
+#                        Lo que hace falta ahí es ENERGÍA, no fibra.
+#   ping ↓  +  bgp ↓   →  se cayó el TRONCAL. El operador retiró rutas: corte
+#                        físico de fibra o caída del nodo. Ahí sí hace falta
+#                        una cuadrilla de red o un enlace satelital.
+#   ping =  +  bgp =   →  sin cambio medible.
+#
+# ── Por qué se compara contra línea base y nunca en absoluto ──────────────
+#
+# El valor crudo de estas series NO se puede leer como "% de gente sin
+# internet", y es un error fácil de cometer: la métrica `loss_pct` de IODA
+# marcaba 80% en Chocó el 12 de agosto y podría leerse como catástrofe. Pero
+# marcaba 84% el día ANTES del sismo. La mayoría de internet simplemente no
+# responde a ping, siempre. El número absoluto no dice nada.
+#
+# Lo que sí dice algo es la DESVIACIÓN de cada zona contra su propio pasado.
+# Por eso cada ventana se compara con la misma ventana de hace 7 días: mismo
+# día de la semana y misma hora, que es como se cancelan el ciclo diario y el
+# ciclo semanal del tráfico.
+
+PULSO_ACCESO = "ping-slash24"    # última milla
+PULSO_TRONCAL = "bgp"            # troncal / anuncios de ruta
+SEMANA_S = 7 * 24 * 3600
+
+# Debajo de este número de bloques /24 la aritmética de porcentajes deja de
+# tener sentido: en Chocó la línea base son ~33 bloques, y que dejen de
+# responder 3 ya da -9%. No es señal, es ruido de muestra chica. Esas zonas se
+# marcan aparte en vez de fingir precisión que no existe.
+MUESTRA_MINIMA = 60
+
+# Operadores que llevan la mayor parte del tráfico del país. Los códigos ASN
+# están verificados contra /entities/query?entityType=asn&relatedTo=country/CO.
+# Starlink va incluido a propósito: es el enlace de respaldo cuando el resto
+# se cae, y ver su curva subir es ver a la gente migrando a satélite.
+OPERADORES: dict[int, str] = {
+    10620: "Claro / Telmex",
+    13489: "Tigo-UNE / EPM Telecomunicaciones",
+    3816:  "Movistar / Colombia Telecomunicaciones",
+    19429: "ETB",
+    14080: "Claro (bloque secundario)",
+    26611: "Emcali / otros regionales",
+    14593: "Starlink (SpaceX)",
+}
+
+
+def _ioda_serie(tipo: str, codigo: Any, desde: int, hasta: int, ds: str) -> list[float]:
+    """Serie temporal cruda de IODA. Devuelve solo los valores numéricos.
+
+    Se descartan los `null` del final: IODA publica con unos minutos de retraso
+    y esos huecos son "todavía no llegó el dato", no "cayó a cero". Contarlos
+    como ceros inventaría un apagón que no existe.
+    """
+    url = (f"{IODA}/signals/raw/{tipo}/{codigo}"
+           f"?from={desde}&until={hasta}&datasource={ds}")
+    datos = _desanidar(_get(url))
+    for serie in datos:
+        return [v for v in (serie.get("values") or []) if isinstance(v, (int, float))]
+    return []
+
+
+def _media(xs: list[float]) -> Optional[float]:
+    return sum(xs) / len(xs) if xs else None
+
+
+def _tendencia(serie: list[float]) -> str:
+    """¿Está cayendo AHORA, o cayó y se estabilizó?
+
+    Sale de la misma serie que ya se pidió, comparando su primer tercio con su
+    último tercio. No necesita guardar historia ni que la pestaña haya estado
+    abierta: en la primera carga ya sabe si la cosa va a peor.
+
+    La diferencia es operativa, no cosmética. Una zona -30% y estable lleva
+    horas así y probablemente ya la están atendiendo. Una zona -30% y cayendo
+    se está apagando mientras alguien lee la pantalla.
+    """
+    s = [v for v in serie if isinstance(v, (int, float))]
+    if len(s) < 6:
+        return "sin_datos"
+    n = len(s) // 3
+    ini, fin = _media(s[:n]), _media(s[-n:])
+    if not ini:
+        return "sin_datos"
+    cambio = (fin - ini) / ini * 100
+    if cambio <= -5:
+        return "empeorando"
+    if cambio >= 5:
+        return "mejorando"
+    return "estable"
+
+
+def _pulso_entidad(tipo: str, codigo: Any, nombre: str, horas: int) -> dict:
+    """Estado de una entidad ahora contra su propia línea base de hace 7 días."""
+    hasta = int(time.time())
+    desde = hasta - horas * 3600
+
+    def par(ds: str) -> tuple[list[float], list[float]]:
+        return (_ioda_serie(tipo, codigo, desde, hasta, ds),
+                _ioda_serie(tipo, codigo, desde - SEMANA_S, hasta - SEMANA_S, ds))
+
+    acceso_hoy, acceso_base = par(PULSO_ACCESO)
+    troncal_hoy, troncal_base = par(PULSO_TRONCAL)
+
+    def delta(hoy: list[float], base: list[float]) -> Optional[float]:
+        a, b = _media(hoy), _media(base)
+        if a is None or not b:
+            return None
+        return round((a - b) / b * 100, 1)
+
+    d_acceso = delta(acceso_hoy, acceso_base)
+    d_troncal = delta(troncal_hoy, troncal_base)
+    base_acceso = _media(acceso_base) or 0
+
+    clase, diagnostico, accion = _diagnosticar(d_acceso, d_troncal, base_acceso, tipo)
+
+    return {
+        "tipo": tipo, "codigo": codigo, "nombre": nombre,
+        "tendencia": _tendencia(acceso_hoy),
+        "acceso": {
+            "ahora": round(_media(acceso_hoy) or 0, 1),
+            "linea_base": round(base_acceso, 1),
+            "delta_pct": d_acceso,
+            "serie": acceso_hoy[-72:],
+            "muestra_suficiente": base_acceso >= MUESTRA_MINIMA,
+        },
+        "troncal": {
+            "ahora": round(_media(troncal_hoy) or 0, 1),
+            "linea_base": round(_media(troncal_base) or 0, 1),
+            "delta_pct": d_troncal,
+            "serie": troncal_hoy[-72:],
+        },
+        "clase": clase,
+        "diagnostico": diagnostico,
+        "accion": accion,
+    }
+
+
+def _diagnosticar(d_acceso: Optional[float], d_troncal: Optional[float],
+                  base_acceso: float, tipo: str = "region") -> tuple[str, str, str]:
+    """Traduce dos deltas a una lectura operativa.
+
+    La distinción que importa: si el troncal aguanta y solo cae el acceso, el
+    problema casi siempre es energía. Mandar fibra ahí no arregla nada.
+    """
+    if d_acceso is None:
+        return ("sin_medicion",
+                "IODA no está devolviendo datos para esta zona en esta ventana.",
+                "No se puede concluir nada. Confirmar por radio o en terreno.")
+
+    if base_acceso < MUESTRA_MINIMA:
+        accion = ("Zona con poca infraestructura que medir. Es candidata a enlace "
+                  "satelital por definición: aquí no hay red que restaurar, hay "
+                  "red que llevar."
+                  if tipo == "region" else
+                  "Operador con poca presencia medible. Su curva no sirve para "
+                  "concluir nada a nivel nacional.")
+        return ("muestra_chica",
+                f"Solo hay ~{base_acceso:.0f} bloques de red medibles aquí. Un "
+                f"cambio de pocos bloques ya mueve el porcentaje, así que el "
+                f"{d_acceso:+.1f}% no es concluyente.",
+                accion)
+
+    troncal_cayo = d_troncal is not None and d_troncal <= -3
+
+    if d_acceso <= -50:
+        if troncal_cayo:
+            return ("troncal_caido",
+                    f"Corte mayor: el acceso cayó {d_acceso:.1f}% y el troncal "
+                    f"{d_troncal:.1f}%. El operador retiró rutas de la tabla global.",
+                    "Corte de red, no de energía. Requiere cuadrilla del operador "
+                    "o enlace satelital para restablecer servicio.")
+        return ("ultima_milla_caida",
+                f"El acceso cayó {d_acceso:.1f}% pero el troncal sigue en pie. La "
+                f"fibra está sana; lo que no responde son los equipos del usuario.",
+                "Firma de apagón: sin energía no hay router aunque el cable esté "
+                "bueno. Aquí hace falta ENERGÍA (planta, combustible), no fibra.")
+
+    if d_acceso <= -20:
+        if troncal_cayo:
+            return ("troncal_degradado",
+                    f"Acceso {d_acceso:.1f}% y troncal {d_troncal:.1f}% por debajo "
+                    f"de lo normal. Degradación que ya toca el enrutamiento.",
+                    "Vigilar de cerca: si el troncal sigue bajando es corte de red "
+                    "en curso, no una fluctuación.")
+        return ("ultima_milla_degradada",
+                f"El acceso está {d_acceso:.1f}% por debajo de su normal, con el "
+                f"troncal intacto.",
+                "Compatible con cortes de energía parciales o intermitentes. "
+                "Contrastar con la capa de energía y con reportes en terreno.")
+
+    if d_acceso <= -8:
+        return ("degradacion_leve",
+                f"Acceso {d_acceso:.1f}% bajo su línea base. Está dentro de lo que "
+                f"puede ser variación normal de un día a otro.",
+                "No es concluyente por sí solo. Sirve como tendencia si sigue "
+                "bajando en las próximas horas.")
+
+    if d_acceso >= 8:
+        return ("recuperando",
+                f"El acceso está {d_acceso:+.1f}% por ENCIMA de su línea base: "
+                f"hay más red respondiendo que hace una semana.",
+                "Señal de restablecimiento. Verificar si coincide con reconexión "
+                "de energía reportada.")
+
+    return ("normal",
+            f"Acceso en su nivel habitual ({d_acceso:+.1f}% contra hace 7 días).",
+            "Sin evidencia instrumental de corte. No descarta problemas locales "
+            "que estas fuentes no alcanzan a ver.")
+
+
+# El orden en que se listan las zonas. Primero lo que exige decisión hoy.
+RANGO_CLASE = {
+    "troncal_caido": 0, "ultima_milla_caida": 1, "troncal_degradado": 2,
+    "ultima_milla_degradada": 3, "muestra_chica": 4, "degradacion_leve": 5,
+    "recuperando": 6, "normal": 7, "sin_medicion": 8,
+}
+
+
+def _en_paralelo(tareas: list, hilos: int = 8) -> list:
+    """IODA aguanta bien varias consultas a la vez y no ofrece consulta
+    multi-entidad (probado: los códigos separados por coma devuelven solo uno).
+    Sin paralelizar, 8 departamentos × 4 series serían ~30 s de espera."""
+    with ThreadPoolExecutor(max_workers=hilos) as ej:
+        return list(ej.map(lambda f: f(), tareas))
+
+
+def pulso_vivo(horas: int = 3) -> dict:
+    """Estado AHORA de los departamentos golpeados por el sismo.
+
+    Esta es la vista principal de HOPE. Ventana corta (3 h por defecto) contra
+    la misma ventana de hace 7 días.
+    """
+    clave = f"pulso_vivo:{horas}"
+    if (c := _cache_leer(clave, CACHE_PULSO_SEG)) is not None:
+        return c
+
+    codigos = sorted(AFECTADOS_SISMO)
+
+    def tarea(cod: int):
+        def _():
+            try:
+                z = _pulso_entidad("region", cod, DEPARTAMENTOS[cod]["nombre"], horas)
+                z.update(lat=DEPARTAMENTOS[cod]["lat"], lon=DEPARTAMENTOS[cod]["lon"])
+                return z
+            except Exception as e:
+                m = DEPARTAMENTOS[cod]
+                return {"tipo": "region", "codigo": cod, "nombre": m["nombre"],
+                        "lat": m["lat"], "lon": m["lon"], "clase": "sin_medicion",
+                        "diagnostico": f"IODA no respondió: {type(e).__name__}",
+                        "accion": "Reintentar. No concluir nada de este vacío.",
+                        "acceso": {}, "troncal": {}}
+        return _
+
+    zonas = _en_paralelo([tarea(c) for c in codigos])
+    zonas.sort(key=lambda z: (RANGO_CLASE.get(z["clase"], 9),
+                              (z.get("acceso") or {}).get("delta_pct") or 0))
+
+    con_corte = [z for z in zonas
+                 if z["clase"] in ("troncal_caido", "ultima_milla_caida",
+                                   "troncal_degradado", "ultima_milla_degradada")]
+    por_energia = [z for z in con_corte if z["clase"].startswith("ultima_milla")]
+
+    res = {
+        "fuente": "IODA /signals/raw (Georgia Tech) — series crudas cada 5-10 min",
+        "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ventana_horas": horas,
+        "comparado_contra": "la misma ventana horaria de hace 7 días",
+        "resumen": {
+            "zonas_medidas": len(zonas),
+            "con_degradacion": len(con_corte),
+            "firma_de_apagon": len(por_energia),
+        },
+        "como_leer": (
+            "Estos números son DESVIACIONES contra el pasado de cada zona, no "
+            "porcentajes de población sin servicio. Un -30% significa que "
+            "responde un 30% menos de red que hace una semana a esta misma "
+            "hora; no que el 30% de la gente esté incomunicada."
+        ),
+        "zonas": zonas,
+    }
+    _cache_guardar(clave, res)
+    return res
+
+
+def pulso_operadores(horas: int = 3) -> dict:
+    """Lo mismo, pero por operador. Responde a: ¿es mi zona o es mi proveedor?
+
+    Un corte que aparece en un solo ASN a lo largo de varios departamentos es
+    un problema del operador. Uno que aparece en todos los ASN de un mismo
+    departamento es un problema de esa zona — energía, casi siempre.
+    """
+    clave = f"pulso_operadores:{horas}"
+    if (c := _cache_leer(clave, CACHE_PULSO_SEG)) is not None:
+        return c
+
+    def tarea(asn: int, nombre: str):
+        def _():
+            try:
+                return _pulso_entidad("asn", asn, nombre, horas)
+            except Exception as e:
+                return {"tipo": "asn", "codigo": asn, "nombre": nombre,
+                        "clase": "sin_medicion",
+                        "diagnostico": f"IODA no respondió: {type(e).__name__}",
+                        "accion": "Reintentar.", "acceso": {}, "troncal": {}}
+        return _
+
+    ops = _en_paralelo([tarea(a, n) for a, n in OPERADORES.items()])
+    ops.sort(key=lambda o: (RANGO_CLASE.get(o["clase"], 9),
+                            (o.get("acceso") or {}).get("delta_pct") or 0))
+
+    res = {
+        "fuente": "IODA /signals/raw por ASN",
+        "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ventana_horas": horas,
+        "nota": "Los ASN son nacionales: un operador degradado aquí no dice EN "
+                "QUÉ departamento está degradado. Cruzar con la vista por zona.",
+        "operadores": ops,
+    }
+    _cache_guardar(clave, res)
+    return res
+
+
+# ── NASA VIIRS: luces nocturnas, el único dato de energía casi en vivo ──────
+#
+# XM publica con dos días de rezago y por área operativa, que no es un
+# municipio. El satélite ve la luz encendida o apagada a ~500 m de resolución,
+# cada noche, con el paso sobre Colombia alrededor de la 1:30 de la madrugada.
+# Es la forma de saber qué pueblo se quedó a oscuras sin esperar a XM.
+#
+# Se sirve como capa de teselas WMTS directamente al navegador: no hace falta
+# llave ni proxy. Verificado el 2026-08-13: la capa de Suomi-NPP (la que suele
+# citarse) está congelada desde 2023; la viva es la de NOAA-20.
+#
+# Limitación honesta y grande: NUBES. El Chocó es de las regiones más lluviosas
+# del planeta. Una noche nublada se ve igual de oscura que una noche sin luz.
+# Por eso siempre se entrega junto con una noche de referencia anterior al
+# sismo: la comparación entre dos noches es lo único interpretable, y aun así
+# hay que descartar que la diferencia sea meteorológica.
+
+GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best"
+CAPA_LUCES = "VIIRS_NOAA20_DayNightBand"
+NOCHE_REFERENCIA = "2026-08-08"   # dos noches antes del sismo, sin daño
+
+
+PLANTILLA_LUCES = (f"{GIBS}/{CAPA_LUCES}/default/{{fecha}}/"
+                   f"GoogleMapsCompatible_Level7/{{z}}/{{y}}/{{x}}.png")
+
+# Tesela de referencia en z=6 que cubre el epicentro y el eje Chocó–Valle.
+# Sirve para preguntarle a la NASA si ya procesó esa noche.
+TESELA_SONDA = {"z": 6, "x": 18, "y": 31}
+
+# Una tesela sin procesar pesa ~1,6 KB (PNG transparente); una con imagen real
+# pesa decenas de KB. El umbral separa "todavía no hay dato" de "hay dato".
+UMBRAL_TESELA_BYTES = 8000
+TIMEOUT_SONDA_TESELA = 8
+
+
+def _noche_procesada(fecha: str) -> tuple[bool, int]:
+    """¿La NASA ya publicó esa noche?
+
+    Importa más de lo que parece: el paso del satélite es a la 1:30 a.m. y el
+    procesamiento tarda horas. Una tesela vacía se pinta negra, igual que un
+    pueblo sin luz. Sin esta comprobación, alguien puede mirar el mapa a las
+    2 a.m., ver todo oscuro y concluir un apagón que no ocurrió.
+    """
+    url = (PLANTILLA_LUCES.replace("{fecha}", fecha)
+           .replace("{z}", str(TESELA_SONDA["z"]))
+           .replace("{y}", str(TESELA_SONDA["y"]))
+           .replace("{x}", str(TESELA_SONDA["x"])))
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "HOPE/0.3"})
+        # Timeout corto y propio: esto es una comprobación de disponibilidad, no
+        # una descarga de datos. Si la NASA va lenta, la respuesta correcta es
+        # decir "no sé" en segundos, no dejar colgado un worker del servidor.
+        with urllib.request.urlopen(req, timeout=TIMEOUT_SONDA_TESELA) as r:
+            n = len(r.read())
+        return n >= UMBRAL_TESELA_BYTES, n
+    except Exception:
+        return False, 0
+
+
+def luces_nocturnas() -> dict:
+    """Configuración de la capa de luces nocturnas para el mapa.
+
+    No descarga la imagen que se ve: devuelve la plantilla de teselas y las
+    noches que tiene sentido comparar, cada una marcada según si la NASA ya la
+    procesó. El navegador pide las teselas directo, sin pasar por aquí.
+    """
+    clave = "luces_nocturnas"
+    if (c := _cache_leer(clave, 1800)) is not None:
+        return c
+
+    hoy = datetime.now(timezone.utc).date()
+    candidatas = [
+        ("anoche", hoy.isoformat()),
+        ("anterior", (hoy - timedelta(days=1)).isoformat()),
+        ("previa", (hoy - timedelta(days=2)).isoformat()),
+        ("referencia", NOCHE_REFERENCIA),
+    ]
+
+    sondeos = _en_paralelo([(lambda f=f: _noche_procesada(f)) for _, f in candidatas], hilos=4)
+    noches = [{"clave": et, "fecha": f, "procesada": ok, "peso_sonda_bytes": peso}
+              for (et, f), (ok, peso) in zip(candidatas, sondeos)]
+
+    res = {
+        "fuente": "NASA GIBS / VIIRS NOAA-20 Day-Night Band",
+        "plantilla": PLANTILLA_LUCES,
+        "zoom_max": 7,
+        "noches": noches,
+        "ultima_procesada": next((n["fecha"] for n in noches if n["procesada"]), None),
+        "paso_satelital_local": "~01:30 hora Colombia",
+        "advertencia": (
+            "Una noche nublada se ve tan oscura como una noche sin luz, y el "
+            "Chocó es de las zonas más nubladas del mundo. Comparar siempre "
+            "contra la noche de referencia previa al sismo, y no concluir un "
+            "apagón sin descartar antes que sea nubosidad."
+        ),
+        "nota_procesado": (
+            "Las noches sin procesar salen deshabilitadas. Una tesela que la "
+            "NASA todavía no publicó se pinta negra igual que un pueblo sin "
+            "luz, y confundir las dos cosas es el error más fácil de cometer "
+            "con esta capa."
+        ),
+    }
+    _cache_guardar(clave, res)
+    return res
+
+
+# ── Parte de situación: el formato que un humano puede recibir ─────────────
+#
+# La restricción de diseño de todo el proyecto es que una capa de datos sin
+# canal hacia quien ejecuta el rescate no le llega a nadie. Un GeoJSON no se
+# lee en un celular a las 3 de la mañana; un mensaje de WhatsApp sí.
+#
+# Esto es texto plano, corto, sin markdown ni tablas, pensado para pegar en un
+# grupo de WhatsApp del CMGRD o mandar por correo a la UNGRD. Lleva siempre la
+# hora, la fuente, el rezago de cada dato y la advertencia de que no es un
+# despacho de emergencia — porque quien lo reenvía no va a agregarla.
+
+TZ_COLOMBIA = timezone(timedelta(hours=-5))
+
+FLECHAS = {"empeorando": "▼ empeorando", "mejorando": "▲ mejorando",
+           "estable": "= estable", "sin_datos": ""}
+
+
+def parte_situacion(horas: int = 3, url_mapa: str = "") -> str:
+    """Genera el parte en texto plano. Todo lo que afirma sale de una consulta
+    hecha en este mismo momento; nada se guarda ni se reutiliza."""
+    ahora_co = datetime.now(TZ_COLOMBIA)
+    L: list[str] = []
+    L.append("HOPE · PARTE DE RED Y ENERGÍA")
+    L.append(f"{ahora_co:%d/%m/%Y %H:%M} hora Colombia")
+    L.append("Sismo M7.4 Chocó 10-ago-2026 · evento USGS us6000tjl2")
+    L.append("")
+
+    try:
+        p = pulso_vivo(horas)
+    except Exception as e:
+        L.append(f"NO SE PUDO CONSULTAR LA FUENTE DE INTERNET ({type(e).__name__}).")
+        L.append("No hay estado que reportar. No asumir que eso significa que todo está bien.")
+        return "\n".join(L)
+
+    r = p["resumen"]
+    graves = [z for z in p["zonas"] if z["clase"] in
+              ("troncal_caido", "ultima_milla_caida", "troncal_degradado",
+               "ultima_milla_degradada")]
+    ciegas = [z for z in p["zonas"] if z["clase"] == "muestra_chica"]
+    normales = [z for z in p["zonas"] if z["clase"] in ("normal", "recuperando",
+                                                        "degradacion_leve")]
+
+    L.append(f"ESTADO: {r['con_degradacion']} de {r['zonas_medidas']} zonas por "
+             f"debajo de su nivel normal.")
+    L.append("")
+
+    if graves:
+        for z in graves:
+            a = z.get("acceso") or {}
+            t = z.get("troncal") or {}
+            flecha = FLECHAS.get(z.get("tendencia", ""), "")
+            L.append(f"[!] {z['nombre'].upper()} — acceso {a.get('delta_pct')}% "
+                     f"{flecha}".rstrip())
+            if z["clase"].startswith("ultima_milla"):
+                L.append("    FALTA ENERGIA. El troncal sigue en pie "
+                         f"({t.get('delta_pct')}%): la fibra esta sana y no")
+                L.append("    responden los equipos del usuario. Se necesita planta y")
+                L.append("    combustible, no cuadrilla de red.")
+            else:
+                L.append("    FALTA RED. El operador retiro rutas "
+                         f"({t.get('delta_pct')}%): corte fisico o")
+                L.append("    nodo caido. Se necesita cuadrilla del operador o enlace")
+                L.append("    satelital.")
+            L.append("")
+    else:
+        L.append("Ninguna zona con degradacion significativa en esta ventana.")
+        L.append("")
+
+    if ciegas:
+        L.append("PUNTOS CIEGOS (no es que esten bien, es que no hay que medir):")
+        for z in ciegas:
+            a = z.get("acceso") or {}
+            L.append(f"  - {z['nombre']}: solo ~{a.get('linea_base')} bloques de red "
+                     f"medibles.")
+        L.append("    Son candidatas a enlace satelital por definicion: alli no hay")
+        L.append("    red que restaurar, hay red que llevar.")
+        L.append("")
+
+    if normales:
+        L.append("SIN CAMBIO: " + ", ".join(z["nombre"] for z in normales) + ".")
+        L.append("")
+
+    # Energía y luces: cada una con su rezago dicho en la cara.
+    try:
+        e = xm_no_atendida(date.today() - timedelta(days=20), date.today())
+        top = [a for a in e["areas"] if a["pico_kwh"] > 0][:2]
+        L.append(f"ENERGIA (XM, ultimo dato disponible {e['ultimo_dato']}, "
+                 f"{e['rezago_dias']} dia(s) de rezago):")
+        if top:
+            # Va la FECHA del pico junto al numero. Sin ella, "8 millones de kWh
+            # sin entregar" se lee como si estuviera pasando ahora, y puede ser
+            # el registro del dia del sismo, ya superado.
+            for a in top:
+                veces = f", x{a['veces_sobre_base']} su normal" if a["veces_sobre_base"] else ""
+                L.append(f"  - {a['area'].replace('AREA ', '')}: pico de "
+                         f"{a['pico_kwh']:,.0f} kWh sin entregar")
+                L.append(f"    el {a['pico_fecha']}{veces}.")
+            hoy_serie = {a["area"]: a["serie_kwh"].get(e["ultimo_dato"], 0) for a in top}
+            L.append(f"  En el ultimo dia con dato ({e['ultimo_dato']}): "
+                     + ", ".join(f"{k.replace('AREA ','')} {v:,.0f} kWh"
+                                 for k, v in hoy_serie.items()) + ".")
+            L.append("  Es el registro contable del apagon, NO su estado actual.")
+        else:
+            L.append("  Sin energia no entregada registrada en la ventana.")
+        L.append("")
+    except Exception:
+        L.append("ENERGIA: XM no respondio en este momento.")
+        L.append("")
+
+    try:
+        luz = luces_nocturnas()
+        if luz.get("ultima_procesada"):
+            L.append(f"LUCES NOCTURNAS (NASA VIIRS): ultima noche procesada "
+                     f"{luz['ultima_procesada']}.")
+            L.append("  Nubes y apagon se ven iguales. Comparar contra la noche previa")
+            L.append(f"  al sismo ({NOCHE_REFERENCIA}) antes de concluir nada.")
+            L.append("")
+    except Exception:
+        pass
+
+    L.append("COMO LEER ESTO")
+    L.append("Los porcentajes son la desviacion de cada zona contra SI MISMA hace")
+    L.append("7 dias a la misma hora. NO son porcentaje de poblacion sin servicio.")
+    L.append(f"Ventana de {horas} h. Fuente internet: IODA (Georgia Tech),")
+    L.append("series de 5-10 min. Granularidad maxima: departamento.")
+    L.append("")
+    L.append("ESTO NO ES UN DESPACHO DE EMERGENCIA. Para vidas en riesgo: 123.")
+    L.append("Es apoyo de datos: nadie es enviado a ningun sitio desde aqui.")
+    if url_mapa:
+        L.append(f"Mapa: {url_mapa}")
+
+    return "\n".join(L)
+
+
+# ── Cloudflare Radar (opcional, requiere llave gratuita) ────────────────────
+#
+# Es la fuente más rápida que existe para tráfico de internet a nivel país y
+# operador: se actualiza en minutos, mientras IODA va en decenas de minutos y
+# XM en días. Además publica cortes CONFIRMADOS y anotados a mano por su
+# equipo, que es lo más cercano a una fuente autoritativa pública.
+#
+# No entra en la ruta crítica de HOPE a propósito: exige llave, y el sistema
+# tiene que seguir funcionando sin ella. Si CLOUDFLARE_API_TOKEN está en el
+# entorno se activa sola; si no, se dice que falta y se sigue.
+#
+# Llave gratuita: dash.cloudflare.com → My Profile → API Tokens → Create Token
+# → permiso «Account · Radar · Read». No necesita dominio ni tarjeta.
+
+RADAR = "https://api.cloudflare.com/client/v4/radar"
+
+
+def _radar_get(ruta: str, params: dict) -> Any:
+    token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("sin_llave")
+    url = f"{RADAR}/{ruta}?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "HOPE/0.3 (respuesta sismo Chocó)"})
+    with urllib.request.urlopen(req, timeout=TIEMPO_ESPERA) as r:
+        return json.loads(r.read().decode())
+
+
+def radar_cloudflare(dias: int = 7) -> dict:
+    """Cortes confirmados por Cloudflare y curva de tráfico de Colombia."""
+    clave = f"radar_cf:{dias}"
+    if (c := _cache_leer(clave, CACHE_PULSO_SEG)) is not None:
+        return c
+
+    if not os.environ.get("CLOUDFLARE_API_TOKEN", "").strip():
+        return {
+            "disponible": False,
+            "motivo": "Falta CLOUDFLARE_API_TOKEN en el entorno.",
+            "como_activar": "dash.cloudflare.com → My Profile → API Tokens → "
+                            "Create Token → permiso «Account · Radar · Read». "
+                            "Es gratis y no pide tarjeta. Ponerlo en .env.",
+        }
+
+    salida: dict[str, Any] = {"disponible": True, "fuente": "Cloudflare Radar",
+                              "consultado": datetime.now(timezone.utc)
+                                            .isoformat(timespec="seconds")}
+    try:
+        an = _radar_get("annotations/outages",
+                        {"location": "CO", "dateRange": f"{dias}d", "limit": 25})
+        salida["cortes_confirmados"] = [
+            {"inicio": o.get("startDate"), "fin": o.get("endDate"),
+             "alcance": o.get("scope"), "tipo": o.get("outageType"),
+             "causa": o.get("outageCause"), "asn": o.get("asnDetails"),
+             "descripcion": o.get("description")}
+            for o in (an.get("result", {}).get("annotations") or [])
+        ]
+    except Exception as e:
+        salida["error_cortes"] = f"{type(e).__name__}: {e}"
+
+    try:
+        ts = _radar_get("http/timeseries",
+                        {"location": "CO", "dateRange": "1d", "aggInterval": "15m"})
+        r = ts.get("result", {}).get("serie_0") or {}
+        salida["trafico_http"] = {"tiempos": r.get("timestamps", []),
+                                  "valores": r.get("values", []),
+                                  "nota": "Índice relativo de peticiones HTTP "
+                                          "vistas por Cloudflare, no volumen absoluto."}
+    except Exception as e:
+        salida["error_trafico"] = f"{type(e).__name__}: {e}"
+
+    _cache_guardar(clave, salida)
+    return salida

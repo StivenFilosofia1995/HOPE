@@ -384,6 +384,80 @@ def estadisticas() -> dict:
 # razones: XM solo acepta POST y no manda CORS, y así queda una sola caché
 # compartida en vez de una por pestaña abierta.
 
+@app.get("/api/cortes/vivo", tags=["cortes"])
+def cortes_vivo(horas: int = Query(3, ge=1, le=48)) -> dict:
+    """**Vista principal.** Estado de la red AHORA en las zonas del sismo.
+
+    Lee las series crudas de IODA (se actualizan cada 5-10 minutos) y compara
+    cada zona contra su propia línea base de hace 7 días. Cruza dos señales:
+
+    - **acceso** (`ping-slash24`): la última milla, el router de la casa.
+    - **troncal** (`bgp`): las rutas que el operador anuncia al mundo.
+
+    Si cae el acceso y el troncal aguanta, la fibra está bien y lo que falta es
+    ENERGÍA. Si caen los dos, es corte de red. Esa distinción cambia qué se
+    manda a la zona, y ninguna fuente la da por separado.
+    """
+    try:
+        return fuentes.pulso_vivo(horas)
+    except Exception as e:
+        raise HTTPException(502, f"IODA no respondió: {type(e).__name__}: {e}")
+
+
+@app.get("/api/informe", tags=["entrega"], response_class=Response)
+def informe(
+    horas: int = Query(3, ge=1, le=48),
+    url_mapa: str = Query("", max_length=300),
+) -> Response:
+    """Parte de situación en texto plano, listo para pegar en WhatsApp o correo.
+
+    Es la pieza que convierte esto en algo que le sirve a alguien: un GeoJSON no
+    se lee en un celular de madrugada, un mensaje sí. Lleva la hora, el rezago
+    de cada fuente y la advertencia de que no es un despacho — porque quien lo
+    reenvíe no la va a agregar.
+    """
+    texto = fuentes.parte_situacion(horas, url_mapa.strip())
+    return Response(content=texto, media_type="text/plain; charset=utf-8")
+
+
+@app.get("/api/cortes/operadores", tags=["cortes"])
+def cortes_operadores(horas: int = Query(3, ge=1, le=48)) -> dict:
+    """Estado por operador (Claro, Tigo-UNE, Movistar, ETB, Starlink…).
+
+    Responde a la pregunta que separa un problema de zona de uno de proveedor:
+    si un solo ASN está degradado, es del operador; si están todos en la misma
+    zona, es de la zona.
+    """
+    try:
+        return fuentes.pulso_operadores(horas)
+    except Exception as e:
+        raise HTTPException(502, f"IODA no respondió: {type(e).__name__}: {e}")
+
+
+@app.get("/api/cortes/luces", tags=["cortes"])
+def cortes_luces() -> dict:
+    """Capa de luces nocturnas VIIRS (NASA): qué pueblo se quedó a oscuras.
+
+    Es el dato de energía con mejor resolución espacial que existe sin llave
+    (~500 m, cada noche) y el único que no espera los dos días de rezago de XM.
+    Devuelve la plantilla de teselas; el navegador las pide directo a la NASA.
+    """
+    return fuentes.luces_nocturnas()
+
+
+@app.get("/api/cortes/radar", tags=["cortes"])
+def cortes_radar(dias: int = Query(7, ge=1, le=28)) -> dict:
+    """Cortes confirmados y tráfico en vivo de Cloudflare Radar.
+
+    Opcional: si no hay `CLOUDFLARE_API_TOKEN` en el entorno devuelve
+    `disponible: false` con las instrucciones, sin romper nada.
+    """
+    try:
+        return fuentes.radar_cloudflare(dias)
+    except Exception as e:
+        raise HTTPException(502, f"Cloudflare Radar no respondió: {type(e).__name__}: {e}")
+
+
 @app.get("/api/cortes/internet", tags=["cortes"])
 def cortes_internet(horas: int = Query(96, ge=1, le=720)) -> dict:
     """Score de corte de internet por departamento (IODA, Georgia Tech).

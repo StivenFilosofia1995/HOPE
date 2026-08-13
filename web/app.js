@@ -134,10 +134,17 @@ async function iniciar() {
 
   await Almacen.iniciar();
   await recargarReportes();
-  cargarCortes();          // depende de Almacen: sabe si hay backend o no
-  cargarSismosRecientes(); // idem
-  cargarClima();           // idem
-  cargarSondasRipe();      // idem
+
+  // Lo primero de la capa de datos es el pulso en vivo: es la razón de ser del
+  // mapa. Lo demás llena el contexto detrás.
+  cargarPulso();           // depende de Almacen: sabe si hay backend o no
+  cargarOperadores();
+  cargarLuces();
+  cargarCortes();
+  cargarRadarCF();
+  cargarSismosRecientes();
+  cargarClima();
+  cargarSondasRipe();
 
   conectarUIZonas();
   iniciarZonas();          // Supabase: zonas y aportes en tiempo real
@@ -151,12 +158,25 @@ async function iniciar() {
 
 const RITMO_MS = 5 * 60 * 1000;
 
+// El pulso va aparte y más rápido: IODA publica series nuevas cada 5-10 min y
+// es lo único de este mapa que responde a la pregunta "¿y ahora?". El resto
+// (score acumulado, XM, clima) cambia en horas o días y no gana nada con ir
+// más seguido — solo gastaría cuota de las fuentes.
+const RITMO_PULSO_MS = 2 * 60 * 1000;
+
 function iniciarAutoRefresco() {
   marcarActualizado();
+
+  setInterval(async () => {
+    await Promise.allSettled([cargarPulso(), cargarOperadores()]);
+    marcarActualizado();
+  }, RITMO_PULSO_MS);
+
   setInterval(async () => {
     await Promise.allSettled([
       cargarReplicas(),
       cargarCortes(),
+      cargarRadarCF(),
       cargarSismosRecientes(),
       cargarClima(),
       cargarSondasRipe(),
@@ -204,8 +224,12 @@ function crearMapa() {
   L.control.layers(bases, null, { position: 'topright' }).addTo(S.mapa);
 
   S.capas = {
+    // Las luces de satélite van primero de todas: son una imagen de fondo y
+    // cualquier otra cosa tiene que quedar por encima para poder leerse.
+    luces:      L.layerGroup(),
     intensidad: L.layerGroup(),
     anillos:    L.layerGroup(),
+    pulso:      L.layerGroup(),
     cortes:     L.layerGroup(),
     energia:    L.layerGroup(),
     replicas:   L.layerGroup(),
@@ -557,6 +581,421 @@ function pintarPanelClima(d) {
   $('#clima-nota').textContent = `${d.fuente} · consultado ${fechaCorta(d.consultado)}. ${d.nota}`;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   PULSO EN VIVO — la vista principal
+   ───────────────────────────────────────────────────────────────────────────
+   Pide `/cortes/vivo`, que compara cada zona contra su propio nivel de hace 7
+   días usando dos señales de IODA: acceso (última milla) y troncal (rutas BGP).
+
+   La regla de lectura que gobierna todo este bloque: los porcentajes son
+   DESVIACIONES, no proporciones de población. Se escribe "−30% vs. normal" y
+   nunca "30% sin internet", porque lo segundo sería falso y llevaría a
+   dimensionar mal una respuesta.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// Cada clase trae color, símbolo y una etiqueta corta. `ultima_milla_caida`
+// va en el color de energía y no en el de red a propósito: aunque la mida una
+// fuente de internet, lo que hace falta ahí es una planta eléctrica.
+const CLASES_PULSO = {
+  troncal_caido:          { et: 'Troncal caído',        color: '#ff3b30', ico: '⛓️‍💥', falta: 'red' },
+  ultima_milla_caida:     { et: 'Última milla caída',   color: '#ff9f0a', ico: '🔌', falta: 'energia' },
+  troncal_degradado:      { et: 'Troncal degradado',    color: '#ff6b6b', ico: '📉', falta: 'red' },
+  ultima_milla_degradada: { et: 'Acceso degradado',     color: '#ffd60a', ico: '🔌', falta: 'energia' },
+  muestra_chica:          { et: 'Poca red que medir',   color: '#c77dff', ico: '❓', falta: null },
+  degradacion_leve:       { et: 'Variación leve',       color: '#ffd60a', ico: '〰️', falta: null },
+  recuperando:            { et: 'Recuperando',          color: '#30d158', ico: '📈', falta: null },
+  normal:                 { et: 'Normal',               color: '#34c759', ico: '✓',  falta: null },
+  sin_medicion:           { et: 'Sin medición',         color: '#98a2b3', ico: '—',  falta: null },
+};
+
+async function cargarPulso() {
+  const cont = $('#pulso-zonas');
+  const horas = Number($('#f-pulso')?.value || 3);
+  if (!S.pulso) cont.innerHTML = '<p class="hint">Consultando IODA…</p>';
+  try {
+    // Sin backend se consulta IODA directo: manda CORS abierto. Así el mapa
+    // sirve subido a cualquier hosting estático, que en una emergencia es la
+    // diferencia entre que alguien lo use y que no.
+    const d = Almacen.modo === 'api'
+      ? await cargarJSON(`${Almacen.base}/cortes/vivo?horas=${horas}`)
+      : await pulsoVivoNavegador(horas);
+    S.pulso = d;
+    pintarPulso(d);
+    pintarCapaPulso(d);
+  } catch (e) {
+    cont.innerHTML = `<p class="hint err">No se pudo leer IODA: ${escapar(e.message)}</p>`;
+  }
+}
+
+function pintarPulso(d) {
+  const r = d.resumen;
+  // El titular cambia según lo que haya. Cuando no hay degradación se dice
+  // así de claro, en vez de dejar un panel vacío que se lee como "falla".
+  const hayAlgo = r.con_degradacion > 0;
+  $('#pulso-resumen').innerHTML = `
+    <div class="pulso-titular ${hayAlgo ? 'alerta' : 'calma'}">
+      <b>${hayAlgo
+            ? `${r.con_degradacion} de ${r.zonas_medidas} zonas por debajo de su nivel normal`
+            : `Las ${r.zonas_medidas} zonas están en su nivel normal`}</b>
+      ${r.firma_de_apagon > 0
+        ? `<span class="firma-energia">🔌 ${r.firma_de_apagon} con firma de apagón
+             — troncal en pie, acceso caído</span>`
+        : ''}
+    </div>`;
+
+  $('#pulso-zonas').innerHTML = d.zonas.map(filaPulso).join('');
+  $('#pulso-nota').innerHTML =
+    `${escapar(d.fuente)} · ventana de ${d.ventana_horas} h contra ${escapar(d.comparado_contra)} ·
+     consultado ${fechaCorta(d.consultado)}` +
+    (d.sin_backend
+      ? '<br><b>Modo sin servidor:</b> internet se consulta directo a IODA desde ' +
+        'este navegador. Funciona, pero no hay capa de energía de XM — esa sí ' +
+        'necesita el backend de HOPE.'
+      : '');
+}
+
+function filaPulso(z) {
+  const c = CLASES_PULSO[z.clase] || CLASES_PULSO.sin_medicion;
+  const a = z.acceso || {}, t = z.troncal || {};
+  const dudoso = a.muestra_suficiente === false;
+  return `
+    <article class="pulso-fila" style="--c:${c.color}">
+      <header>
+        <span class="ico" aria-hidden="true">${c.ico}</span>
+        <b class="nombre">${escapar(z.nombre)}</b>
+        ${tendenciaHTML(z.tendencia)}
+        <span class="etiqueta">${escapar(c.et)}</span>
+      </header>
+      <div class="barras">
+        <div class="barra" title="Acceso: la última milla, el router de la casa">
+          <span class="rot">acceso</span>
+          ${chispa(a.serie, c.color)}
+          <span class="delta ${claseDelta(a.delta_pct)}">${fmtDelta(a.delta_pct)}${dudoso ? ' *' : ''}</span>
+        </div>
+        <div class="barra" title="Troncal: rutas que el operador anuncia al mundo">
+          <span class="rot">troncal</span>
+          ${chispa(t.serie, '#5ac8fa')}
+          <span class="delta ${claseDelta(t.delta_pct)}">${fmtDelta(t.delta_pct)}</span>
+        </div>
+      </div>
+      <p class="diag">${escapar(z.diagnostico || '')}</p>
+      ${c.falta ? `<p class="accion falta-${c.falta}">${escapar(z.accion || '')}</p>` : ''}
+      ${dudoso ? '<p class="hint">* Muestra demasiado pequeña para que el porcentaje sea concluyente.</p>' : ''}
+    </article>`;
+}
+
+/** Una zona -30% y estable lleva horas así, y probablemente ya la están
+ *  atendiendo. Una zona -30% y cayendo se está apagando mientras alguien mira
+ *  la pantalla. Es la diferencia entre mirar y actuar, así que va visible. */
+function tendenciaHTML(t) {
+  const T = {
+    empeorando: ['▼', 'empeorando', 'mal'],
+    mejorando:  ['▲', 'mejorando',  'bien'],
+    estable:    ['=', 'estable',    ''],
+  }[t];
+  if (!T) return '';
+  return `<span class="tend ${T[2]}" title="Tendencia dentro de la ventana: ${T[1]}">
+            ${T[0]} ${T[1]}</span>`;
+}
+
+function fmtDelta(v) {
+  if (v === null || v === undefined) return 's/d';
+  return (v > 0 ? '+' : '') + v.toFixed(1) + '%';
+}
+
+function claseDelta(v) {
+  if (v === null || v === undefined) return '';
+  if (v <= -20) return 'mal';
+  if (v <= -8) return 'ojo';
+  if (v >= 8) return 'bien';
+  return '';
+}
+
+/** Sparkline en SVG, sin librerías. Escala al min/max de la propia serie:
+ *  lo que interesa es la FORMA (¿está cayendo ahora?), no el valor absoluto,
+ *  que ya sale como porcentaje al lado. */
+function chispa(serie, color) {
+  const s = (serie || []).filter((v) => typeof v === 'number');
+  if (s.length < 3) return '<svg class="chispa" viewBox="0 0 100 24"></svg>';
+  const min = Math.min(...s), max = Math.max(...s);
+  const rango = max - min || 1;
+  const pts = s.map((v, i) =>
+    `${(i / (s.length - 1) * 100).toFixed(1)},${(22 - (v - min) / rango * 20).toFixed(1)}`
+  ).join(' ');
+  return `<svg class="chispa" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6"
+      stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+  </svg>`;
+}
+
+/** Marcadores del pulso en el mapa. Se dibujan solo las zonas que tienen algo
+ *  que decir: pintar un círculo verde sobre cada departamento normal solo tapa
+ *  el mapa y compite con los reportes de la gente. */
+function pintarCapaPulso(d) {
+  S.capas.pulso.clearLayers();
+  let n = 0;
+  d.zonas.forEach((z) => {
+    if (z.clase === 'normal' || z.clase === 'sin_medicion') return;
+    if (!z.lat) return;
+    const c = CLASES_PULSO[z.clase] || CLASES_PULSO.sin_medicion;
+    const a = z.acceso || {};
+    const caida = Math.abs(a.delta_pct || 0);
+    const radio = Math.max(12, Math.min(44, 12 + caida * 0.9));
+
+    L.circleMarker([z.lat, z.lon], {
+      radius: radio,
+      color: c.color, weight: z.clase === 'muestra_chica' ? 3 : 2,
+      dashArray: z.clase === 'muestra_chica' ? '5 4' : null,
+      fillColor: c.color, fillOpacity: z.clase === 'muestra_chica' ? 0.07 : 0.22,
+    }).bindPopup(`
+      <h3>${escapar(z.nombre)}</h3>
+      <div style="color:${c.color};font-weight:600">${c.ico} ${escapar(c.et)}</div>
+      <dl>
+        <dt>Acceso (última milla)</dt><dd>${fmtDelta(a.delta_pct)} vs. su normal</dd>
+        <dt>Troncal (rutas BGP)</dt><dd>${fmtDelta((z.troncal || {}).delta_pct)}</dd>
+      </dl>
+      <div style="margin-top:8px">${escapar(z.diagnostico || '')}</div>
+      ${c.falta ? `<div class="no-verificado" style="margin-top:6px">${escapar(z.accion || '')}</div>` : ''}
+      <div class="hint" style="margin-top:8px">Promedio de todo el departamento.
+        Para puntos exactos, ver la capa «Sondas de red».</div>
+    `, { maxWidth: 330 }).addTo(S.capas.pulso);
+    n++;
+  });
+  actualizarCuenta('pulso', n);
+}
+
+/* ── Parte de situación: sacar los datos de la pantalla ────────────────────
+   La restricción de todo el proyecto es que datos sin canal hacia quien ejecuta
+   el rescate no le llegan a nadie. Un GeoJSON no se lee en un celular de
+   madrugada; un mensaje de WhatsApp sí.
+
+   Con backend se pide `/api/informe`, que además cruza XM. Sin backend se
+   arma aquí mismo con lo que ya está en pantalla, diciendo qué falta. */
+
+async function generarParte() {
+  const horas = Number($('#f-pulso')?.value || 3);
+  if (Almacen.modo === 'api') {
+    const r = await fetch(
+      `${Almacen.base}/informe?horas=${horas}&url_mapa=${encodeURIComponent(location.href)}`);
+    if (!r.ok) throw new Error('El backend no pudo generar el parte');
+    return r.text();
+  }
+  return parteDesdePantalla(S.pulso, horas);
+}
+
+function parteDesdePantalla(p, horas) {
+  if (!p) throw new Error('Todavía no hay datos cargados');
+  const L = [];
+  const f = new Date().toLocaleString('es-CO',
+    { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  L.push('HOPE · PARTE DE RED');
+  L.push(`${f} hora local`);
+  L.push('Sismo M7.4 Chocó 10-ago-2026 · evento USGS us6000tjl2');
+  L.push('');
+  L.push(`ESTADO: ${p.resumen.con_degradacion} de ${p.resumen.zonas_medidas} zonas ` +
+         'por debajo de su nivel normal.');
+  L.push('');
+
+  const graves = p.zonas.filter((z) => ['troncal_caido', 'ultima_milla_caida',
+    'troncal_degradado', 'ultima_milla_degradada'].includes(z.clase));
+  const ciegas = p.zonas.filter((z) => z.clase === 'muestra_chica');
+  const resto = p.zonas.filter((z) => ['normal', 'recuperando', 'degradacion_leve'].includes(z.clase));
+
+  const FL = { empeorando: '(empeorando)', mejorando: '(mejorando)', estable: '(estable)' };
+
+  if (graves.length) {
+    graves.forEach((z) => {
+      L.push(`[!] ${z.nombre.toUpperCase()} — acceso ${z.acceso.delta_pct}% ` +
+             `${FL[z.tendencia] || ''}`.trim());
+      L.push(z.clase.startsWith('ultima_milla')
+        ? `    FALTA ENERGIA. El troncal sigue en pie (${z.troncal.delta_pct}%):\n` +
+          '    la fibra esta sana y no responden los equipos del usuario.\n' +
+          '    Se necesita planta y combustible, no cuadrilla de red.'
+        : `    FALTA RED. El operador retiro rutas (${z.troncal.delta_pct}%):\n` +
+          '    corte fisico o nodo caido. Se necesita cuadrilla del operador\n' +
+          '    o enlace satelital.');
+      L.push('');
+    });
+  } else {
+    L.push('Ninguna zona con degradacion significativa en esta ventana.');
+    L.push('');
+  }
+
+  if (ciegas.length) {
+    L.push('PUNTOS CIEGOS (no es que esten bien, es que no hay que medir):');
+    ciegas.forEach((z) => L.push(`  - ${z.nombre}: solo ~${z.acceso.linea_base} ` +
+                                 'bloques de red medibles.'));
+    L.push('    Candidatas a enlace satelital: alli no hay red que restaurar,');
+    L.push('    hay red que llevar.');
+    L.push('');
+  }
+  if (resto.length) {
+    L.push('SIN CAMBIO: ' + resto.map((z) => z.nombre).join(', ') + '.');
+    L.push('');
+  }
+
+  L.push('ENERGIA: no disponible en este modo (XM necesita el servidor de HOPE).');
+  L.push('');
+  L.push('COMO LEER ESTO');
+  L.push('Los porcentajes son la desviacion de cada zona contra SI MISMA hace');
+  L.push('7 dias a la misma hora. NO son porcentaje de poblacion sin servicio.');
+  L.push(`Ventana de ${horas} h. Fuente: IODA (Georgia Tech), series de 5-10 min.`);
+  L.push('Granularidad maxima: departamento.');
+  L.push('');
+  L.push('ESTO NO ES UN DESPACHO DE EMERGENCIA. Para vidas en riesgo: 123.');
+  L.push('Es apoyo de datos: nadie es enviado a ningun sitio desde aqui.');
+  L.push(`Mapa: ${location.href}`);
+  return L.join('\n');
+}
+
+async function accionParte(modo) {
+  try {
+    const texto = await generarParte();
+    if (modo === 'whatsapp') {
+      window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank', 'noopener');
+      return;
+    }
+    // `share` es lo que sirve en celular: deja elegir WhatsApp, Telegram, correo
+    // o radio-enlace, sin que HOPE tenga que saber cuál usa el destinatario.
+    if (modo === 'compartir' && navigator.share) {
+      await navigator.share({ title: 'HOPE — parte de red y energía', text: texto });
+      return;
+    }
+    await navigator.clipboard.writeText(texto);
+    toast('Parte copiado. Pégalo en WhatsApp o correo.');
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;   // el usuario canceló el compartir
+    toast('No se pudo generar el parte: ' + e.message, true);
+  }
+}
+
+// ── Panel: estado por operador ──────────────────────────────────────────────
+
+async function cargarOperadores() {
+  const cont = $('#pulso-operadores');
+  if (!cont) return;
+  try {
+    const horas = Number($('#f-pulso')?.value || 3);
+    const d = Almacen.modo === 'api'
+      ? await cargarJSON(`${Almacen.base}/cortes/operadores?horas=${horas}`)
+      : await pulsoOperadoresNavegador(horas);
+    cont.innerHTML = d.operadores.map((o) => {
+      const c = CLASES_PULSO[o.clase] || CLASES_PULSO.sin_medicion;
+      const a = o.acceso || {};
+      return `<div class="op-fila" title="${escapar(o.diagnostico || '')}">
+        <span class="op-punto" style="background:${c.color}"></span>
+        <span class="op-nombre">${escapar(o.nombre)}</span>
+        ${chispa(a.serie, c.color)}
+        <span class="delta ${claseDelta(a.delta_pct)}">${fmtDelta(a.delta_pct)}</span>
+      </div>`;
+    }).join('') + `<p class="hint">${escapar(d.nota)}</p>`;
+  } catch (e) {
+    cont.innerHTML = `<p class="hint err">No se pudo leer: ${escapar(e.message)}</p>`;
+  }
+}
+
+// ── Capa: luces nocturnas VIIRS (NASA GIBS) ─────────────────────────────────
+//
+// Teselas servidas directo por la NASA al navegador: no pasan por el backend
+// porque no hace falta llave ni hay problema de CORS con imágenes.
+//
+// Son excluyentes entre sí: ver dos noches encimadas no compara nada. El botón
+// activo apaga a los otros dos. La noche de referencia es anterior al sismo y
+// existe justo para eso — para tener contra qué comparar.
+
+// Plantilla y noches cuando no hay backend. Sin backend no se puede sondear el
+// peso de la tesela, así que no se sabe qué noches procesó la NASA: se ofrecen
+// todas y se avisa. Es peor esconder la capa que darla con su advertencia.
+function lucesSinBackend() {
+  const dia = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  return {
+    plantilla: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/' +
+               'VIIRS_NOAA20_DayNightBand/default/{fecha}/' +
+               'GoogleMapsCompatible_Level7/{z}/{y}/{x}.png',
+    zoom_max: 7,
+    noches: [
+      { clave: 'anoche', fecha: dia(0), procesada: true },
+      { clave: 'anterior', fecha: dia(1), procesada: true },
+      { clave: 'previa', fecha: dia(2), procesada: true },
+      { clave: 'referencia', fecha: '2026-08-08', procesada: true },
+    ],
+    nota_procesado: 'Sin backend no se puede comprobar qué noches publicó ya la ' +
+      'NASA. Si una sale completamente negra, lo más probable es que aún no esté ' +
+      'procesada — no que se haya ido la luz en todo el país.',
+  };
+}
+
+async function cargarLuces() {
+  const cont = $('#luces-control');
+  if (!cont) return;
+  try {
+    const cfg = Almacen.modo === 'api'
+      ? await cargarJSON(`${Almacen.base}/cortes/luces`)
+      : lucesSinBackend();
+    const ET = {
+      anoche: 'Anoche', anterior: 'Anteanoche', previa: 'Hace 3 noches',
+      referencia: 'Antes del sismo',
+    };
+
+    // Las noches que la NASA aún no procesó van deshabilitadas, no ocultas:
+    // que se vea que existen y por qué no se pueden mirar todavía.
+    cont.innerHTML = cfg.noches.map((n) =>
+      `<button type="button" class="btn btn-sec luz-btn${n.procesada ? '' : ' pendiente'}"
+               data-fecha="${n.procesada ? n.fecha : ''}" ${n.procesada ? '' : 'disabled'}
+               title="${n.procesada ? '' : 'La NASA todavía no publicó esta noche'}">
+         ${escapar(ET[n.clave] || n.clave)}<small>${escapar(n.fecha)}${n.procesada ? '' : ' · sin procesar'}</small>
+       </button>`).join('') +
+      `<button type="button" class="btn btn-sec luz-btn activo" data-fecha="">Apagar</button>`;
+
+    cont.querySelectorAll('.luz-btn:not([disabled])').forEach((b) => {
+      b.onclick = () => {
+        cont.querySelectorAll('.luz-btn').forEach((o) => o.classList.remove('activo'));
+        b.classList.add('activo');
+        S.capas.luces.clearLayers();
+        const fecha = b.dataset.fecha;
+        if (!fecha) { actualizarCuenta('luces', '—'); return; }
+        L.tileLayer(cfg.plantilla.replace('{fecha}', fecha), {
+          maxNativeZoom: cfg.zoom_max, maxZoom: 18, opacity: 0.85,
+          attribution: 'Imagen: NASA EOSDIS GIBS / VIIRS NOAA-20',
+        }).addTo(S.capas.luces);
+        actualizarCuenta('luces', fecha);
+      };
+    });
+
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = cfg.nota_procesado;
+    cont.after(p);
+  } catch (e) {
+    cont.innerHTML = `<p class="hint err">No se pudo configurar la capa: ${escapar(e.message)}</p>`;
+  }
+}
+
+// ── Panel: cortes confirmados por Cloudflare Radar (opcional) ───────────────
+
+async function cargarRadarCF() {
+  const cont = $('#radar-cf');
+  if (!cont || Almacen.modo !== 'api') return;
+  try {
+    const d = await cargarJSON(`${Almacen.base}/cortes/radar?dias=7`);
+    if (!d.disponible) {
+      cont.innerHTML = `<p class="hint">Fuente opcional sin activar. ${escapar(d.motivo || '')}
+        <br>${escapar(d.como_activar || '')}</p>`;
+      return;
+    }
+    const cs = d.cortes_confirmados || [];
+    cont.innerHTML = cs.length
+      ? cs.map((o) => `<div class="leyenda-fila">
+            <span>${escapar(o.descripcion || o.tipo || 'corte')}</span>
+            <span style="margin-left:auto" class="hint">${fechaCorta(o.inicio)}</span>
+          </div>`).join('')
+      : '<p class="hint">Cloudflare no ha anotado cortes en Colombia en los últimos 7 días.</p>';
+  } catch (e) {
+    cont.innerHTML = `<p class="hint err">${escapar(e.message)}</p>`;
+  }
+}
+
 // ── Capas: cortes de internet (IODA) y de energía (XM) ──────────────────────
 //
 // Ambas pasan por el backend: XM solo acepta POST y no manda CORS, y así queda
@@ -763,6 +1202,10 @@ function pintarPanelPrioridad(prio) {
     cont.appendChild(fila);
   });
 
+  $('#cortes-nota').textContent =
+    `Ventana de ${Math.round((prio.ventana.hasta - prio.ventana.desde) / 3600)} h. ` +
+    'El score de IODA no tiene unidad: ordena zonas entre sí, no mide población.';
+
   const av = document.createElement('p');
   av.className = 'hint';
   av.textContent = prio.advertencia;
@@ -778,20 +1221,30 @@ function pintarPanelPrioridad(prio) {
 
 function pintarPanelEnergia(energia) {
   const top = energia.areas.filter((a) => a.pico_kwh > 0).slice(0, 3);
-  if (!top.length) { $('#energia-resumen').innerHTML = ''; return; }
-  $('#energia-resumen').innerHTML =
-    '<div class="leyenda-titulo">Energía no entregada — pico</div>' +
-    top.map((a) => `
-      <div class="leyenda-fila">
-        <span>${escapar(a.area.replace('AREA ', ''))}</span>
-        <span style="margin-left:auto;font-variant-numeric:tabular-nums">
-          ${nf.format(Math.round(a.pico_kwh))} kWh
-          ${a.veces_sobre_base ? `<b style="color:var(--critica)">×${a.veces_sobre_base}</b>` : ''}
-        </span>
-      </div>`).join('');
-  $('#cortes-nota').textContent =
-    `${energia.fuente} · ${energia.metrica} · consultado ${fechaCorta(energia.consultado)}. ` +
-    energia.nota_mapeo;
+
+  // El rezago va arriba y en grande, no en letra chica al final. Quien mire
+  // esta cifra tiene que saber, antes de leerla, que es de anteayer: XM
+  // publica el registro contable del apagón, no su estado actual.
+  const rez = energia.rezago_dias;
+  const sello = rez === null || rez === undefined ? '' :
+    `<div class="sello-rezago ${rez >= 2 ? 'viejo' : ''}">
+       Dato del ${escapar(energia.ultimo_dato)} · ${rez} día${rez === 1 ? '' : 's'} de rezago
+     </div>`;
+
+  $('#energia-resumen').innerHTML = sello + (top.length
+    ? '<div class="leyenda-titulo">Energía no entregada — pico</div>' +
+      top.map((a) => `
+        <div class="leyenda-fila">
+          <span>${escapar(a.area.replace('AREA ', ''))}</span>
+          <span style="margin-left:auto;font-variant-numeric:tabular-nums">
+            ${nf.format(Math.round(a.pico_kwh))} kWh
+            ${a.veces_sobre_base ? `<b style="color:var(--critica)">×${a.veces_sobre_base}</b>` : ''}
+          </span>
+        </div>`).join('')
+    : '<p class="hint">XM no reporta energía no entregada en esta ventana.</p>');
+
+  $('#energia-rezago').textContent =
+    `${energia.fuente} · ${energia.metrica}. ${energia.nota_rezago || ''} ${energia.nota_mapeo}`;
 }
 
 async function verEventosCorte(codigo) {
@@ -1220,6 +1673,20 @@ function conectarUI() {
   };
   ['#f-tipo', '#f-prioridad', '#f-estado'].forEach((s) => { $(s).onchange = pintarReportes; });
   $('#f-ventana').onchange = cargarCortes;
+  $('#f-pulso').onchange = () => { cargarPulso(); cargarOperadores(); };
+
+  $('#btn-parte-wa').onclick = () => accionParte('whatsapp');
+  $('#btn-parte-copiar').onclick = () => accionParte('copiar');
+  $('#btn-parte-wa-2').onclick = () => accionParte('whatsapp');
+  $('#btn-parte-copiar-2').onclick = () => accionParte('copiar');
+  $('#btn-parte-ver').onclick = async () => {
+    try {
+      $('#parte-texto').textContent = await generarParte();
+      $('#modal-parte').hidden = false;
+    } catch (e) {
+      toast('No se pudo generar el parte: ' + e.message, true);
+    }
+  };
 
   $('#btn-plegar').onclick = () => {
     document.body.classList.toggle('panel-plegado');
@@ -1250,10 +1717,12 @@ function activarModoAgregar(activo) {
 
 function construirControlCapas() {
   const defs = [
+    ['pulso',      'Estado de red AHORA',      '#ff9f0a'],
+    ['luces',      'Luces nocturnas (VIIRS)',  '#ffd60a'],
     ['zonas',      'Zonas reportadas',         '#ff3b30'],
     ['aportes',    'Recursos ofrecidos',       '#34c759'],
     ['reportes',   'Apuntes internos',         '#4da3ff'],
-    ['cortes',     'Corte de internet (IODA)', '#c77dff'],
+    ['cortes',     'Corte acumulado (IODA)',   '#c77dff'],
     ['energia',    'Energía no entregada (XM)','#00d4ff'],
     ['epicentro',  'Epicentro',                '#ff3b30'],
     ['replicas',   'Réplicas (USGS)',          '#ffd60a'],

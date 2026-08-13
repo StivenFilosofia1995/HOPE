@@ -1,7 +1,37 @@
-# HOPE — mapa base del sismo M7.4 Chocó (10 ago 2026)
+# HOPE — internet y energía caídos tras el sismo M7.4 de Chocó (10 ago 2026)
 
-Visualización geoespacial del sismo y capa editable para captar puntos
-(reportes, necesidades, daños). Corre en un portátil, sin servicios de pago.
+**Qué zonas están sin red y sin luz ahora mismo, y si lo que falta ahí es
+energía o es fibra.** Corre en un portátil, sin servicios de pago.
+
+El mapa lleva encima una capa editable para captar puntos (reportes,
+necesidades, recursos), pero el centro es el estado de la red en vivo.
+
+El catálogo completo de fuentes, endpoints probados y sus límites está en
+**[FUENTES.md](FUENTES.md)**.
+
+### La pregunta que responde y ninguna fuente responde sola
+
+IODA publica series crudas cada 5–10 minutos. HOPE lee dos a la vez y las cruza:
+
+| acceso (`ping-slash24`) | troncal (`bgp`) | Lectura | Qué hace falta en terreno |
+|---|---|---|---|
+| ↓ | = | La fibra está sana; los equipos del usuario no contestan | **Energía** — planta, combustible |
+| ↓ | ↓ | El operador retiró rutas: corte físico o nodo caído | **Red** — cuadrilla o enlace satelital |
+| = | = | Sin cambio medible | — |
+
+Sin ese cruce, un corte de luz y un corte de fibra se ven idénticos, y se
+responde al que no es.
+
+### Los números son desviaciones, nunca proporciones
+
+Todo porcentaje del panel compara cada zona **contra sí misma hace 7 días**, a
+la misma hora. Un −30% significa que responde un 30% menos de red que hace una
+semana; **no** que el 30% de la gente esté incomunicada.
+
+Esto no es un detalle de estilo. `ping-slash24-loss` marcaba **80% en Chocó** el
+12 de agosto — y **84% el día antes del sismo**. La mayor parte de internet no
+responde a ping, siempre. Leído en absoluto, ese número inventa una catástrofe;
+leído contra su línea base, dice la verdad: ahí no había cambiado nada.
 
 ---
 
@@ -117,20 +147,44 @@ recargar la página. Zonas y aportes ya llegan por WebSocket sin polling.
 
 ## Cortes de red y energía: qué se mide de verdad
 
-Dos fuentes públicas, sin llave de API, verificadas el 2026-08-12.
+Detalle completo, con ejemplos de llamada y límites de cada fuente, en
+**[FUENTES.md](FUENTES.md)**. Resumen:
 
-**IODA** — Internet Outage Detection and Analysis, Georgia Tech.
-`https://api.ioda.inetintel.cc.gatech.edu/v2/`
-Mide alcanzabilidad de internet por tres métodos independientes: `bgp` (rutas que
-desaparecen de la tabla global), `ping-slash24` (sondeo activo a bloques /24) y
-`merit-nt` (telescopio de red). Manda CORS. **Granularidad máxima en Colombia:
-departamento — no hay municipios.**
+| La pregunta | La fuente | Latencia | Llave |
+|---|---|---|---|
+| ¿Cómo está la red **ahora**? | IODA `/signals/raw` | 5–10 min | no |
+| ¿Es la zona o es mi operador? | IODA por ASN | 5–10 min | no |
+| ¿Falta **luz** o falta **fibra**? | IODA: acceso × troncal | 5–10 min | no |
+| ¿Qué **pueblo** quedó a oscuras? | NASA VIIRS luces nocturnas | 1 noche | no |
+| ¿Cuánta energía se dejó de entregar? | XM `DemaNoAtenNoProg` | 1–2 días | no |
+| ¿Hay un corte **confirmado**? | Cloudflare Radar | minutos | sí (gratis) |
+| ¿Hay internet en **este punto**? | RIPE Atlas | minutos | no |
 
-**XM** — operador del Sistema Interconectado Nacional.
-`https://servapibi.xm.com.co/daily`, POST, sin llave.
-Métrica `DemaNoAtenNoProg`: energía que se debió entregar y no se entregó, en
-kWh/día por área operativa. Un apagón deja rastro aquí. Rezago ~1 día.
-(Ojo: la métrica horaria `DemaReal` sí tiene ~3 días de rezago.)
+**IODA** — Georgia Tech. `https://api.ioda.inetintel.cc.gatech.edu/v2/`
+Sin llave, manda CORS. `/signals/raw` da series cada 5–10 min por departamento y
+por operador; `/outages/summary` da el acumulado histórico.
+**Granularidad máxima en Colombia: departamento — no hay municipios.**
+
+**NASA VIIRS luces nocturnas** — teselas WMTS de GIBS, sin llave.
+Lo único que ve **energía a escala de pueblo** (~500 m) sin esperar días. Ojo:
+la capa `VIIRS_SNPP_DayNightBand_ENCC`, que es la que suele citarse, **está
+congelada desde julio de 2023**; la viva es `VIIRS_NOAA20_DayNightBand`.
+Dos límites: las **nubes** se ven iguales que un apagón (y el Chocó es de las
+zonas más nubladas del mundo), y una noche **sin procesar** se pinta negra igual
+que un corte — HOPE sondea una tesela sobre el epicentro y deshabilita las
+noches que la NASA todavía no publicó.
+
+**XM** — Sistema Interconectado Nacional. `https://servapibi.xm.com.co/daily`,
+POST, sin llave, **sin CORS** (hay que proxiar). Métrica `DemaNoAtenNoProg`:
+energía no entregada por falla, kWh/día por área operativa.
+**Rezago real medido el 13 de agosto: 1–2 días.** Es el registro contable del
+apagón, no su estado actual — probado que `DemaReal` por área devuelve 400 y por
+sistema no trae los días recientes. El panel muestra el rezago como sello,
+calculado en cada consulta.
+
+**Cloudflare Radar** — opcional, llave gratuita. La fuente más rápida y la única
+con cortes **confirmados a mano**. Sin `CLOUDFLARE_API_TOKEN` el sistema sigue
+funcionando y lo dice.
 
 **USGS** — catálogo sísmico global, `GET /api/sismos/recientes`.
 Ventana rodante (por defecto 7 días, M≥3) sobre todo el país — distinta de la
@@ -310,14 +364,33 @@ data/hope.db            Local, se crea sola. No versionar: tiene datos personale
 | `GET` | `/api/reportes.geojson` | Descarga para entrega (QGIS, ArcGIS, Google Earth) |
 | `GET` | `/api/reportes.csv` | Descarga para Excel (con BOM) |
 | `GET` | `/api/estadisticas` | Conteos por tipo/prioridad/estado |
-| `GET` | `/api/cortes/internet?horas=96` | Score de corte por departamento (IODA) |
+**Tiempo real — es la vista principal:**
+
+| Método | Ruta | |
+|---|---|---|
+| `GET` | `/api/cortes/vivo?horas=3` | **Estado ahora** por zona: acceso × troncal, delta contra hace 7 días, diagnóstico y acción |
+| `GET` | `/api/cortes/operadores?horas=3` | Lo mismo por ASN — ¿es la zona o es el proveedor? |
+| `GET` | `/api/cortes/luces` | Capa VIIRS: plantilla de teselas y qué noches ya procesó la NASA |
+| `GET` | `/api/cortes/radar?dias=7` | Cortes confirmados por Cloudflare (opcional, con llave) |
+
+**Histórico y contexto:**
+
+| Método | Ruta | |
+|---|---|---|
+| `GET` | `/api/cortes/internet?horas=96` | Score acumulado por departamento (IODA) |
 | `GET` | `/api/cortes/internet/{codigo}?horas=96` | Eventos con hora de inicio y duración reales |
-| `GET` | `/api/cortes/energia?dias=20` | Energía no entregada por área (XM) + línea base |
+| `GET` | `/api/cortes/energia?dias=20` | Energía no entregada por área (XM) + línea base + rezago medido |
+| `GET` | `/api/cortes/sondas` | Sondas RIPE Atlas: puntos físicos con coordenadas |
 | `GET` | `/api/cortes/prioridad?horas=96` | Ranking cruzado para decidir dónde llevar enlaces |
 
 Los cortes pasan por el backend y no directo desde el navegador porque XM solo
-acepta POST y no manda CORS, y así queda una caché compartida (10 min) en vez de
-una por pestaña abierta.
+acepta POST y no manda CORS, y así queda una caché compartida en vez de una por
+pestaña abierta. El pulso en vivo se cachea 2 minutos (IODA publica cada 5–10) y
+el resto 10 minutos. Las teselas de la NASA sí van directo al navegador: son
+imágenes, no hace falta llave ni proxy.
+
+Las 8 zonas del pulso se consultan en paralelo — IODA no acepta multi-entidad
+(probado: `region/745,741,734` devuelve solo una), y en serie serían ~30 s.
 
 ## Mapear personas atrapadas
 
