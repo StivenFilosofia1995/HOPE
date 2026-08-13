@@ -324,6 +324,10 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
 .opcion-bienvenida .ico { font-size: 22px; }
 .opcion-bienvenida b, .opcion-bienvenida small { display: block; }
 .opcion-bienvenida small { color: var(--texto-2); font-size: 11px; margin-top: 2px; line-height: 1.4; }
+/* Mirar el mapa va primero y con el color de acento: es lo que hace la
+   mayoría, y es lo que el mapa hace mejor. Reportar y aportar quedan como
+   acciones deliberadas, no como el único camino de entrada. */
+.opcion-bienvenida.mirar { border: 1px solid rgba(77, 163, 255, .6); background: rgba(77, 163, 255, .1); }
 .opcion-bienvenida.necesita { border: 1px solid rgba(255, 59, 48, .6); background: rgba(255, 59, 48, .1); }
 .opcion-bienvenida.aporta { border: 1px solid rgba(52, 199, 89, .6); background: rgba(52, 199, 89, .1); }
 .opcion-bienvenida.necesita:hover { background: rgba(255, 59, 48, .22); }
@@ -410,11 +414,46 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
 
 /* La firma de apagón es el hallazgo más accionable del panel: si el troncal
    aguanta y el acceso no, hace falta energía, no fibra. Va destacada. */
-.firma-energia {
+.firma-energia, .firma-ciega {
   display: block; margin-top: 6px; padding-top: 6px;
   border-top: 1px dashed var(--linea);
-  color: var(--alta); font-weight: 600; font-size: 12px;
+  font-weight: 600; font-size: 12px; line-height: 1.45;
 }
+.firma-energia { color: var(--alta); }
+.firma-ciega { color: #c77dff; }
+
+/* ── La lección: por qué un apagón deja sin internet ─────────────────────
+   Abierta por defecto. Sin entender esto, las tarjetas de arriba son ruido
+   para cualquiera que no trabaje en redes. */
+
+.leccion {
+  margin: 14px 0 4px; border: 1px solid var(--linea); border-radius: 8px;
+  background: var(--bg-3); overflow: hidden;
+}
+.leccion > summary {
+  cursor: pointer; padding: 10px 12px; font-size: 12.5px; font-weight: 600;
+  color: var(--texto); list-style: none;
+}
+.leccion > summary::-webkit-details-marker { display: none; }
+.leccion > summary::before { content: '▸ '; color: var(--acento); }
+.leccion[open] > summary::before { content: '▾ '; color: var(--acento); }
+.leccion-cuerpo { padding: 0 12px 12px; }
+.leccion-cuerpo > p { font-size: 12px; color: var(--texto-2); line-height: 1.55; margin: 0 0 10px; }
+.leccion-clave {
+  border-left: 3px solid var(--alta); padding: 8px 10px; margin: 10px 0 0 !important;
+  background: rgba(255, 149, 0, .08); border-radius: 0 4px 4px 0;
+  color: var(--texto) !important;
+}
+
+#diagrama-red { display: flex; flex-direction: column; gap: 10px; }
+.escena { margin: 0; }
+.escena figcaption {
+  font-size: 11.5px; font-weight: 700; margin-bottom: 2px;
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.escena svg { display: block; max-width: 280px; }
+.escena p { font-size: 11.5px; color: var(--texto-2); line-height: 1.5; margin: 2px 0 0; }
+.escena p b { color: var(--texto); }
 
 .pulso-zonas { display: flex; flex-direction: column; gap: 8px; }
 
@@ -423,12 +462,38 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
   border-radius: 7px; padding: 9px 11px; background: var(--bg-2);
 }
 .pulso-fila header { display: flex; align-items: center; gap: 7px; }
-.pulso-fila .ico { font-size: 13px; line-height: 1; }
+.pulso-fila .ico { font-size: 14px; line-height: 1; }
 .pulso-fila .nombre { font-size: 13px; font-weight: 600; }
-.pulso-fila .etiqueta {
-  margin-left: auto; font-size: 10px; text-transform: uppercase;
-  letter-spacing: .6px; color: var(--c, var(--texto-2)); font-weight: 600;
+.pulso-fila header .tend { margin-left: auto; }
+
+/* El titular manda: es lo único que mucha gente va a leer. Por eso va más
+   grande que el nombre del departamento y sin un número al lado que lo
+   contamine. */
+.titular-zona {
+  font-size: 14px; font-weight: 600; color: var(--c, var(--texto));
+  margin: 7px 0 0; line-height: 1.35;
 }
+.explica-zona { font-size: 12px; color: var(--texto-2); margin: 5px 0 0; line-height: 1.55; }
+
+/* Qué mandar a la zona. Es la conclusión accionable y va destacada: alguien
+   puede leer solo esto y ya sabe si el problema se resuelve con una planta
+   eléctrica o con una cuadrilla de fibra. */
+.que-falta {
+  margin-top: 9px; padding: 8px 10px; border-radius: 6px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.que-falta b { font-size: 11.5px; letter-spacing: .3px; }
+.que-falta span { font-size: 11.5px; line-height: 1.5; opacity: .88; }
+.que-falta.falta-energia { background: rgba(255, 159, 10, .12); color: #ffc266; }
+.que-falta.falta-red     { background: rgba(255, 59, 48, .12);  color: #ff8c85; }
+
+.detalle-zona { margin-top: 9px; }
+.detalle-zona summary {
+  cursor: pointer; font-size: 11px; color: var(--acento); list-style: none; padding: 3px 0;
+}
+.detalle-zona summary::-webkit-details-marker { display: none; }
+.detalle-zona summary::before { content: '▸ '; }
+.detalle-zona[open] summary::before { content: '▾ '; }
 
 .barras { display: flex; flex-direction: column; gap: 3px; margin: 7px 0 5px; }
 .barra { display: flex; align-items: center; gap: 8px; }
@@ -465,16 +530,19 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
 
 /* Enviar el parte es la acción que saca los datos de esta pestaña y los pone
    donde sirven. Va con el peso visual de una acción principal. */
-.parte-acciones { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
-.parte-acciones #btn-parte-wa { flex: 1 1 100%; }
-.parte-acciones .btn-sec { flex: 1 1 0; }
+.parte-acciones { display: flex; gap: 6px; margin-top: 14px; }
+.parte-acciones .btn { flex: 1 1 auto; }
 
 .parte-texto {
-  background: var(--bg); border: 1px solid var(--linea); border-radius: 6px;
-  padding: 12px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  width: 100%; background: var(--bg); border: 1px solid var(--linea);
+  border-radius: 6px; padding: 12px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
   font-size: 11.5px; line-height: 1.5; color: var(--texto);
-  white-space: pre-wrap; word-break: break-word;
-  max-height: 46vh; overflow-y: auto; margin: 10px 0 0;
+  white-space: pre; overflow: auto; margin: 10px 0 0; resize: vertical;
+  max-height: 46vh;
+}
+#parte-ayuda.destacado {
+  color: var(--media); border-left: 2px solid var(--media); padding-left: 8px;
 }
 
 .estado-llave { font-size: 11.5px; margin: 8px 0; line-height: 1.5; }

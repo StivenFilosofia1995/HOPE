@@ -122,6 +122,7 @@ async function iniciar() {
   S.ciudades = ciudades;
 
   pintarFichaEvento();
+  pintarDiagramaRed();
   // El control de capas primero: crea los contadores que las capas van llenando.
   construirControlCapas();
   construirLeyenda();
@@ -597,16 +598,73 @@ function pintarPanelClima(d) {
 // Cada clase trae color, símbolo y una etiqueta corta. `ultima_milla_caida`
 // va en el color de energía y no en el de red a propósito: aunque la mida una
 // fuente de internet, lo que hace falta ahí es una planta eléctrica.
+/* Cada clase se dice dos veces: en cristiano para cualquiera que abra el mapa,
+   y en técnico para quien vaya a tomar una decisión con esto.
+
+   `titular` responde «¿qué pasa aquí?» sin jerga y sin números.
+   `explica`  responde «¿y eso qué significa para mí?».
+   `et`       es la etiqueta técnica, que queda en el detalle plegado.
+
+   La regla de escritura: nada de «degradación», «última milla», «troncal» ni
+   porcentajes en el nivel de arriba. Si una frase necesita que ya sepas cómo
+   funciona una red, va abajo. */
 const CLASES_PULSO = {
-  troncal_caido:          { et: 'Troncal caído',        color: '#ff3b30', ico: '⛓️‍💥', falta: 'red' },
-  ultima_milla_caida:     { et: 'Última milla caída',   color: '#ff9f0a', ico: '🔌', falta: 'energia' },
-  troncal_degradado:      { et: 'Troncal degradado',    color: '#ff6b6b', ico: '📉', falta: 'red' },
-  ultima_milla_degradada: { et: 'Acceso degradado',     color: '#ffd60a', ico: '🔌', falta: 'energia' },
-  muestra_chica:          { et: 'Poca red que medir',   color: '#c77dff', ico: '❓', falta: null },
-  degradacion_leve:       { et: 'Variación leve',       color: '#ffd60a', ico: '〰️', falta: null },
-  recuperando:            { et: 'Recuperando',          color: '#30d158', ico: '📈', falta: null },
-  normal:                 { et: 'Normal',               color: '#34c759', ico: '✓',  falta: null },
-  sin_medicion:           { et: 'Sin medición',         color: '#98a2b3', ico: '—',  falta: null },
+  troncal_caido: {
+    titular: 'Se cayó el internet de la zona',
+    explica: 'Se dañó la conexión grande que le trae internet a toda la región. ' +
+             'No es falta de luz: hay que reparar la red o llevar internet por satélite.',
+    et: 'Troncal caído', color: '#ff3b30', ico: '⛔', falta: 'red',
+  },
+  ultima_milla_caida: {
+    titular: 'Hay internet en la región, pero no llega a las casas',
+    explica: 'Los cables grandes están bien. Lo que no responde son los equipos ' +
+             'de las casas y los barrios, y eso casi siempre pasa porque no hay luz: ' +
+             'sin electricidad el módem no prende. Aquí lo que hace falta es energía.',
+    et: 'Última milla caída', color: '#ff9f0a', ico: '🔌', falta: 'energia',
+  },
+  troncal_degradado: {
+    titular: 'El internet de la zona está fallando',
+    explica: 'La conexión grande de la región está funcionando a medias. Si sigue ' +
+             'bajando, se convierte en un corte completo.',
+    et: 'Troncal degradado', color: '#ff6b6b', ico: '⚠️', falta: 'red',
+  },
+  ultima_milla_degradada: {
+    titular: 'Le está llegando peor de lo normal a las casas',
+    explica: 'Los cables grandes están bien, pero muchos equipos de casas y barrios ' +
+             'no contestan. Suele ser luz que se va y vuelve.',
+    et: 'Acceso degradado', color: '#ffd60a', ico: '🔌', falta: 'energia',
+  },
+  muestra_chica: {
+    titular: 'Aquí casi no hay con qué medir',
+    explica: 'Ojo: esto NO quiere decir que esté bien. Quiere decir que en esta zona ' +
+             'hay tan poco internet instalado que no alcanzamos a notar si falla. ' +
+             'Suele ser peor que una zona con problemas medidos.',
+    et: 'Muestra insuficiente', color: '#c77dff', ico: '❓', falta: null,
+  },
+  degradacion_leve: {
+    titular: 'Un poco peor que un día normal',
+    explica: 'La diferencia es pequeña y puede ser variación del día a día. Sirve ' +
+             'como aviso si sigue bajando en las próximas horas.',
+    et: 'Variación leve', color: '#ffd60a', ico: '〰️', falta: null,
+  },
+  recuperando: {
+    titular: 'Mejorando',
+    explica: 'Hay más red respondiendo que hace una semana. Suele ser señal de que ' +
+             'están restableciendo el servicio.',
+    et: 'Recuperando', color: '#30d158', ico: '📈', falta: null,
+  },
+  normal: {
+    titular: 'Funcionando normal',
+    explica: 'La red anda como un día cualquiera. No descarta problemas de una casa ' +
+             'o una cuadra: esto mira departamentos enteros.',
+    et: 'Normal', color: '#34c759', ico: '✓', falta: null,
+  },
+  sin_medicion: {
+    titular: 'No hay datos de esta zona',
+    explica: 'La fuente no está respondiendo ahora. No significa que esté bien ni ' +
+             'que esté mal: significa que no sabemos.',
+    et: 'Sin medición', color: '#98a2b3', ico: '—', falta: null,
+  },
 };
 
 async function cargarPulso() {
@@ -633,14 +691,19 @@ function pintarPulso(d) {
   // El titular cambia según lo que haya. Cuando no hay degradación se dice
   // así de claro, en vez de dejar un panel vacío que se lee como "falla".
   const hayAlgo = r.con_degradacion > 0;
+  const ciegas = d.zonas.filter((z) => z.clase === 'muestra_chica').length;
   $('#pulso-resumen').innerHTML = `
     <div class="pulso-titular ${hayAlgo ? 'alerta' : 'calma'}">
       <b>${hayAlgo
-            ? `${r.con_degradacion} de ${r.zonas_medidas} zonas por debajo de su nivel normal`
-            : `Las ${r.zonas_medidas} zonas están en su nivel normal`}</b>
+            ? `${r.con_degradacion} de ${r.zonas_medidas} zonas están peor que un día normal`
+            : `Las ${r.zonas_medidas} zonas están como un día normal`}</b>
       ${r.firma_de_apagon > 0
-        ? `<span class="firma-energia">🔌 ${r.firma_de_apagon} con firma de apagón
-             — troncal en pie, acceso caído</span>`
+        ? `<span class="firma-energia">🔌 En ${r.firma_de_apagon} de ellas el problema
+             parece ser falta de luz, no falta de internet</span>`
+        : ''}
+      ${ciegas > 0
+        ? `<span class="firma-ciega">❓ ${ciegas} zona${ciegas === 1 ? '' : 's'} sin
+             forma de medir. Eso no es estar bien: es no saber.</span>`
         : ''}
     </div>`;
 
@@ -655,34 +718,126 @@ function pintarPulso(d) {
       : '');
 }
 
+/* La tarjeta va en dos niveles. Arriba, lo que cualquiera necesita: qué pasa y
+   qué significa. Abajo, plegado, lo técnico para quien vaya a actuar.
+
+   Los números NO van arriba a propósito. Un «−16,5%» de titular se lee como
+   «el 16% está sin internet», que es falso, y no hay pie de página que
+   deshaga esa primera impresión. */
 function filaPulso(z) {
   const c = CLASES_PULSO[z.clase] || CLASES_PULSO.sin_medicion;
   const a = z.acceso || {}, t = z.troncal || {};
   const dudoso = a.muestra_suficiente === false;
+
+  const QUE_FALTA = {
+    energia: ['Lo que hace falta aquí es ENERGÍA',
+              'Una planta eléctrica y combustible. Mandar una cuadrilla de ' +
+              'internet no arreglaría nada.'],
+    red:     ['Lo que hace falta aquí es RED',
+              'Una cuadrilla del operador o un enlace satelital. No se arregla ' +
+              'con una planta eléctrica.'],
+  }[c.falta];
+
   return `
     <article class="pulso-fila" style="--c:${c.color}">
       <header>
         <span class="ico" aria-hidden="true">${c.ico}</span>
         <b class="nombre">${escapar(z.nombre)}</b>
         ${tendenciaHTML(z.tendencia)}
-        <span class="etiqueta">${escapar(c.et)}</span>
       </header>
-      <div class="barras">
-        <div class="barra" title="Acceso: la última milla, el router de la casa">
-          <span class="rot">acceso</span>
-          ${chispa(a.serie, c.color)}
-          <span class="delta ${claseDelta(a.delta_pct)}">${fmtDelta(a.delta_pct)}${dudoso ? ' *' : ''}</span>
+
+      <p class="titular-zona">${escapar(c.titular)}</p>
+      <p class="explica-zona">${escapar(c.explica)}</p>
+
+      ${QUE_FALTA ? `
+        <div class="que-falta falta-${c.falta}">
+          <b>${escapar(QUE_FALTA[0])}</b>
+          <span>${escapar(QUE_FALTA[1])}</span>
+        </div>` : ''}
+
+      <details class="detalle-zona">
+        <summary>Ver los números</summary>
+        <div class="barras">
+          <div class="barra" title="La conexión de las casas y los barrios">
+            <span class="rot">casas</span>
+            ${chispa(a.serie, c.color)}
+            <span class="delta ${claseDelta(a.delta_pct)}">${fmtDelta(a.delta_pct)}${dudoso ? ' *' : ''}</span>
+          </div>
+          <div class="barra" title="Los cables grandes que conectan la región">
+            <span class="rot">cables</span>
+            ${chispa(t.serie, '#5ac8fa')}
+            <span class="delta ${claseDelta(t.delta_pct)}">${fmtDelta(t.delta_pct)}</span>
+          </div>
         </div>
-        <div class="barra" title="Troncal: rutas que el operador anuncia al mundo">
-          <span class="rot">troncal</span>
-          ${chispa(t.serie, '#5ac8fa')}
-          <span class="delta ${claseDelta(t.delta_pct)}">${fmtDelta(t.delta_pct)}</span>
-        </div>
-      </div>
-      <p class="diag">${escapar(z.diagnostico || '')}</p>
-      ${c.falta ? `<p class="accion falta-${c.falta}">${escapar(z.accion || '')}</p>` : ''}
-      ${dudoso ? '<p class="hint">* Muestra demasiado pequeña para que el porcentaje sea concluyente.</p>' : ''}
+        <p class="hint">Comparado con esta misma hora hace 7 días.
+          Clasificación técnica: <b>${escapar(c.et)}</b>.</p>
+        <p class="diag">${escapar(z.diagnostico || '')}</p>
+        ${z.accion ? `<p class="diag">${escapar(z.accion)}</p>` : ''}
+        ${dudoso ? '<p class="hint">* Muestra demasiado pequeña para que el ' +
+                   'porcentaje sea concluyente.</p>' : ''}
+      </details>
     </article>`;
+}
+
+/* Diagrama de los dos modos de falla. Es SVG en línea, sin librerías ni
+   imágenes: tiene que verse aunque la conexión esté mala, que es exactamente
+   la situación de quien más lo necesita.
+
+   Enseña una sola idea, la que hace entendible el resto del panel: la cadena
+   tiene dos eslabones y se rompe en sitios distintos según sea apagón o daño
+   de red. Se dibujan los dos casos lado a lado porque la comparación es la
+   lección; un solo diagrama no la transmite. */
+function pintarDiagramaRed() {
+  const cont = $('#diagrama-red');
+  if (!cont) return;
+
+  // La cadena tiene tres eslabones. Lo que enseña el dibujo es que se rompe en
+  // un sitio DISTINTO según la causa, y que por eso se pueden distinguir sin
+  // ir hasta allá. Las dos escenas solo se diferencian en dónde va la X: esa
+  // diferencia es toda la lección.
+  const ESLABONES = [
+    { x: 6,   icono: '🌐', etiqueta: 'internet' },
+    { x: 68,  icono: '🗼', etiqueta: 'red de la zona' },
+    { x: 130, icono: '🏠', etiqueta: 'tu casa' },
+  ];
+  const ENLACES = [57, 119];   // puntos medios entre eslabón 0-1 y 1-2
+
+  const escena = (titulo, color, apagados, corte, pie) => {
+    const eslabon = ({ x, icono, etiqueta }, i) => `
+      <g opacity="${apagados.includes(i) ? 0.3 : 1}">
+        <rect x="${x}" y="14" width="48" height="34" rx="7" fill="#1e2430"
+              stroke="${apagados.includes(i) ? color : '#3d4657'}" stroke-width="1.2"/>
+        <text x="${x + 24}" y="36" text-anchor="middle" font-size="17">${icono}</text>
+      </g>
+      <text x="${x + 24}" y="61" text-anchor="middle" font-size="7.5"
+            fill="${apagados.includes(i) ? color : '#99a2b3'}">${etiqueta}</text>`;
+
+    const xc = ENLACES[corte];
+    return `
+      <figure class="escena">
+        <figcaption style="color:${color}">${titulo}</figcaption>
+        <svg viewBox="0 0 202 68" width="100%" role="img" aria-label="${titulo}">
+          <line x1="54" y1="31" x2="66" y2="31" stroke="#3d4657" stroke-width="2"/>
+          <line x1="116" y1="31" x2="128" y2="31" stroke="#3d4657" stroke-width="2"/>
+          ${ESLABONES.map(eslabon).join('')}
+          <line x1="${xc - 7}" y1="24" x2="${xc + 7}" y2="38" stroke="${color}"
+                stroke-width="2.8" stroke-linecap="round"/>
+          <line x1="${xc - 7}" y1="38" x2="${xc + 7}" y2="24" stroke="${color}"
+                stroke-width="2.8" stroke-linecap="round"/>
+        </svg>
+        <p>${pie}</p>
+      </figure>`;
+  };
+
+  cont.innerHTML =
+    // Apagón: el internet llega hasta la zona, se corta al entrar a la casa.
+    escena('Se fue la luz', '#ff9f0a', [2], 1,
+           'El internet llega hasta la zona, pero sin electricidad el módem de tu ' +
+           'casa no prende. Hace falta <b>energía</b>.') +
+    // Daño de red: se corta antes, y la zona entera queda por fuera.
+    escena('Se dañó la red', '#ff3b30', [1, 2], 0,
+           'Se rompió la conexión que le trae internet a toda la región. Aunque ' +
+           'tengas luz, no llega nada. Hace falta <b>reparar la red</b>.');
 }
 
 /** Una zona -30% y estable lleva horas así, y probablemente ya la están
@@ -850,24 +1005,31 @@ function parteDesdePantalla(p, horas) {
   return L.join('\n');
 }
 
-async function accionParte(modo) {
+/* Copiar es lo único que funciona en todos lados. Se intentó abrir WhatsApp
+   directo con wa.me y no sirve: el enlace se abre DESPUÉS de esperar los datos,
+   y para entonces el navegador ya no lo cuenta como un clic de la persona, así
+   que lo bloquea como ventana emergente. Copiar y pegar da un paso más de
+   trabajo pero nunca falla, y deja elegir WhatsApp, correo o lo que sea. */
+
+async function copiarParte() {
+  const area = $('#parte-texto');
+  const texto = area.value;
+  const ayuda = $('#parte-ayuda');
   try {
-    const texto = await generarParte();
-    if (modo === 'whatsapp') {
-      window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank', 'noopener');
-      return;
-    }
-    // `share` es lo que sirve en celular: deja elegir WhatsApp, Telegram, correo
-    // o radio-enlace, sin que HOPE tenga que saber cuál usa el destinatario.
-    if (modo === 'compartir' && navigator.share) {
-      await navigator.share({ title: 'HOPE — parte de red y energía', text: texto });
-      return;
-    }
+    // El texto ya está en pantalla, así que esto corre directo sobre el clic:
+    // no hay espera de por medio que le quite el permiso.
     await navigator.clipboard.writeText(texto);
-    toast('Parte copiado. Pégalo en WhatsApp o correo.');
-  } catch (e) {
-    if (e && e.name === 'AbortError') return;   // el usuario canceló el compartir
-    toast('No se pudo generar el parte: ' + e.message, true);
+    toast('Informe copiado. Pégalo en WhatsApp, Telegram o el correo.');
+  } catch (_) {
+    // Sin permiso de portapapeles (pasa en algunos navegadores de celular), se
+    // deja el texto seleccionado para que copiarlo a mano sea un gesto.
+    area.focus();
+    area.select();
+    if (ayuda) {
+      ayuda.textContent = 'Tu navegador no dejó copiar automáticamente. El texto ' +
+        'ya quedó seleccionado: usa Ctrl+C, o mantén pulsado y elige «Copiar».';
+      ayuda.classList.add('destacado');
+    }
   }
 }
 
@@ -1691,16 +1853,22 @@ function conectarUI() {
   $('#f-ventana').onchange = cargarCortes;
   $('#f-pulso').onchange = () => { cargarPulso(); cargarOperadores(); };
 
-  $('#btn-parte-wa').onclick = () => accionParte('whatsapp');
-  $('#btn-parte-copiar').onclick = () => accionParte('copiar');
-  $('#btn-parte-wa-2').onclick = () => accionParte('whatsapp');
-  $('#btn-parte-copiar-2').onclick = () => accionParte('copiar');
+  $('#btn-parte-copiar').onclick = copiarParte;
   $('#btn-parte-ver').onclick = async () => {
+    const b = $('#btn-parte-ver');
+    b.disabled = true;
+    b.textContent = 'Preparando…';
     try {
-      $('#parte-texto').textContent = await generarParte();
+      $('#parte-texto').value = await generarParte();
+      $('#parte-ayuda').textContent = 'Después de copiarlo, ábrelo en WhatsApp, ' +
+        'Telegram o el correo y pégalo donde lo necesites.';
+      $('#parte-ayuda').classList.remove('destacado');
       $('#modal-parte').hidden = false;
     } catch (e) {
-      toast('No se pudo generar el parte: ' + e.message, true);
+      toast('No se pudo preparar el informe: ' + e.message, true);
+    } finally {
+      b.disabled = false;
+      b.textContent = 'Preparar informe para compartir';
     }
   };
 

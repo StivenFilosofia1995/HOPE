@@ -39,8 +39,8 @@
          ═══════════════════════════════════════════════════════════════ -->
     <section class="bloque vivo">
       <div class="bloque-head">
-        <h2>Internet y energía ahora</h2>
-        <select id="f-pulso" class="mini" title="Ventana de comparación">
+        <h2>¿Hay internet y luz?</h2>
+        <select id="f-pulso" class="mini" title="Cuánto tiempo hacia atrás se mira">
           <option value="3">últimas 3 h</option>
           <option value="6">últimas 6 h</option>
           <option value="12">últimas 12 h</option>
@@ -51,39 +51,51 @@
       <div id="pulso-resumen" class="pulso-resumen"></div>
       <div id="pulso-zonas" class="pulso-zonas"></div>
 
-      <!-- Sacar los datos de la pantalla. Es lo que convierte esto en algo
-           que le sirve a alguien: un mapa que nadie fuera de esta pestaña ve
-           no ayuda a nadie en terreno. -->
+      <!-- La lección que hace entendible todo lo demás. Va antes que los datos
+           y abierta por defecto: sin esto, las tarjetas de arriba son ruido.
+           La mayoría de la gente no sabe que un apagón tumba el internet
+           aunque el cable esté perfecto, y esa es justo la distinción que el
+           mapa está midiendo. -->
+      <details class="leccion" open>
+        <summary>¿Por qué un apagón deja sin internet?</summary>
+        <div class="leccion-cuerpo">
+          <p>Para que llegue internet a un celular tienen que funcionar
+            <strong>dos cosas distintas</strong>. Cuando falla una, el mapa lo nota:</p>
+          <div id="diagrama-red"></div>
+          <p class="leccion-clave">Un módem sin luz no prende, aunque el cable
+            esté perfecto. Por eso, cuando los cables grandes están bien pero las
+            casas no responden, <strong>lo que falta es energía, no internet</strong>
+            — y mandar una cuadrilla de fibra no arregla nada.</p>
+        </div>
+      </details>
+
+      <!-- Sacar los datos de la pantalla. Un mapa que nadie fuera de esta
+           pestaña ve no ayuda a nadie en terreno. -->
       <div class="parte-acciones">
-        <button id="btn-parte-wa" class="btn btn-primario">
-          Enviar parte por WhatsApp
+        <button id="btn-parte-ver" class="btn btn-primario">
+          Preparar informe para compartir
         </button>
-        <button id="btn-parte-copiar" class="btn btn-sec">Copiar</button>
-        <button id="btn-parte-ver" class="btn btn-sec">Ver</button>
       </div>
-      <p class="hint">Texto plano con la hora, la fuente y el rezago de cada dato,
-        listo para pegarle a un CMGRD, a la Cruz Roja o a la Defensa Civil.
-        Incluye siempre la advertencia de que no es un despacho de emergencia,
-        porque quien lo reenvíe no la va a agregar.</p>
+      <p class="hint">Arma un resumen en texto que puedes pegar en WhatsApp o en
+        un correo. Lleva la hora, de dónde salió cada dato y qué tan viejo es.</p>
 
       <p class="hint" id="pulso-nota"></p>
 
       <details class="explicador">
-        <summary>¿Qué significan estos números?</summary>
-        <p>No son «porcentaje de gente sin internet». Son <strong>la desviación
-          de cada zona contra su propio nivel normal</strong>, medido a la misma
+        <summary>Para quien quiera el detalle técnico</summary>
+        <p>Los porcentajes no son «gente sin internet». Son <strong>la desviación
+          de cada zona contra su propio nivel normal</strong>, medida a la misma
           hora de hace 7 días. Un −30% quiere decir que responde un 30% menos de
           red que hace una semana, no que el 30% esté incomunicado.</p>
-        <p>Se miran dos cosas a la vez:</p>
+        <p>Se miran dos señales a la vez:</p>
         <ul class="explicador-lista">
-          <li><b>Acceso</b> — la última milla: el router de la casa, la antena
-            del barrio. Se cae cuando se va la luz.</li>
-          <li><b>Troncal</b> — las rutas que el operador anuncia al mundo. Solo
-            se cae si el problema es de red, no de energía.</li>
+          <li><b>Acceso</b> (<code>ping-slash24</code>) — la última milla: el
+            router de la casa, la antena del barrio. Cae cuando se va la luz.</li>
+          <li><b>Troncal</b> (<code>bgp</code>) — las rutas que el operador
+            anuncia al mundo. Solo cae si el problema es de red.</li>
         </ul>
-        <p class="clave"><b>Si cae el acceso y el troncal aguanta, la fibra está
-          sana y lo que falta es energía.</b> Mandar una cuadrilla de red ahí no
-          arregla nada; hace falta una planta y combustible.</p>
+        <p>Fuente: IODA (Georgia Tech), series cada 5–10 min. La granularidad
+          máxima disponible en Colombia es el departamento.</p>
       </details>
     </section>
 
@@ -263,26 +275,35 @@
 <!-- ═══════════════ Bienvenida para el primer uso ═══════════════ -->
 <div id="modal-bienvenida" class="modal" hidden>
   <div class="modal-caja bienvenida" role="dialog" aria-modal="true" aria-labelledby="bienvenida-titulo">
-    <p class="sobrelinea">MAPA DE APOYO COMUNITARIO</p>
-    <h2 id="bienvenida-titulo">¿Cómo puedes usar HOPE?</h2>
-    <p>Este mapa ayuda a conectar necesidades y recursos durante una emergencia.
-      <strong>No envía ambulancias ni equipos de rescate.</strong> Si hay peligro inmediato, llama al 123.</p>
+    <p class="sobrelinea">SISMO M7.4 · CHOCÓ · 10 DE AGOSTO DE 2026</p>
+    <h2 id="bienvenida-titulo">¿Dónde no hay internet ni luz?</h2>
+    <p>Este mapa mide, cada pocos minutos, qué zonas del país tienen la red
+      peor que un día normal — y algo que casi nadie sabe distinguir:
+      <strong>si lo que falta es electricidad o si se dañó el internet</strong>.
+      Son problemas distintos y se arreglan con cosas distintas.</p>
+
+    <p class="aviso-inline">
+      <strong>No envía ambulancias ni equipos de rescate.</strong>
+      Si hay peligro inmediato, llama al <strong>123</strong>.
+    </p>
 
     <div class="pasos-bienvenida">
+      <button type="button" class="opcion-bienvenida mirar" data-cerrar="#modal-bienvenida">
+        <span class="ico">📡</span>
+        <span><b>Ver el estado de la red</b><small>Qué zonas están peor de lo normal ahora mismo.</small></span>
+      </button>
       <button type="button" class="opcion-bienvenida necesita" data-iniciar="zona">
         <span class="ico">📍</span>
-        <span><b>Veo una necesidad</b><small>Marca en el mapa dónde falta ayuda o qué problema hay.</small></span>
+        <span><b>Reportar un problema</b><small>Marca en el mapa dónde falta luz, internet u otra ayuda.</small></span>
       </button>
       <button type="button" class="opcion-bienvenida aporta" data-iniciar="aporte">
         <span class="ico">🤝</span>
-        <span><b>Tengo algo para aportar</b><small>Marca dónde está el recurso que puedes ofrecer.</small></span>
+        <span><b>Ofrecer un recurso</b><small>Planta eléctrica, Starlink, transporte, alimentos…</small></span>
       </button>
     </div>
 
-    <p class="hint">Al elegir una opción, el siguiente paso será tocar el lugar exacto en el mapa.</p>
-    <div class="modal-acciones bienvenida-acciones">
-      <button type="button" class="btn btn-sec" data-cerrar="#modal-bienvenida">Solo quiero mirar el mapa</button>
-    </div>
+    <p class="hint">Si eliges reportar u ofrecer algo, el siguiente paso será
+      tocar el lugar exacto en el mapa.</p>
   </div>
 </div>
 
@@ -474,15 +495,22 @@
 <!-- ═══════════════ Parte de situación, para revisar antes de enviar ═══════════════ -->
 <div id="modal-parte" class="modal" hidden>
   <div class="modal-caja">
-    <h2>Parte de situación</h2>
+    <h2>Informe para compartir</h2>
     <p class="hint">Léelo antes de mandarlo. Todo lo que dice sale de una consulta
-      hecha ahora mismo; nada está guardado ni estimado.</p>
-    <pre id="parte-texto" class="parte-texto"></pre>
+      hecha ahora mismo; nada está guardado ni estimado. Puedes editarlo antes de
+      copiarlo si quieres agregar algo que sepas de tu zona.</p>
+
+    <!-- Un textarea y no un <pre>: si la copia automática falla (pasa en algunos
+         navegadores de celular), la persona todavía puede seleccionar y copiar a
+         mano. Un bloque de solo lectura la dejaría sin salida. -->
+    <textarea id="parte-texto" class="parte-texto" rows="16" spellcheck="false"></textarea>
+
     <div class="modal-acciones">
       <button type="button" class="btn btn-sec" data-cerrar="#modal-parte">Cerrar</button>
-      <button type="button" id="btn-parte-copiar-2" class="btn btn-sec">Copiar</button>
-      <button type="button" id="btn-parte-wa-2" class="btn btn-primario">Enviar por WhatsApp</button>
+      <button type="button" id="btn-parte-copiar" class="btn btn-primario">Copiar informe</button>
     </div>
+    <p class="hint" id="parte-ayuda">Después de copiarlo, ábrelo en WhatsApp,
+      Telegram o el correo y pégalo donde lo necesites.</p>
   </div>
 </div>
 

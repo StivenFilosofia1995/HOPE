@@ -300,6 +300,15 @@ function pintarAportes() {
 
 // ── Paneles ─────────────────────────────────────────────────────────────────
 
+/** wa.me exige el número con indicativo de país; sin él devuelve un enlace
+ *  muerto. Casi nadie escribe «+57» al dar su celular, así que un número
+ *  colombiano de 10 dígitos que empieza por 3 se completa solo. Cualquier otra
+ *  cosa se deja tal cual: inventarle un indicativo a un número extranjero sería
+ *  peor que dejarlo como está. */
+function conIndicativo(digitos) {
+  return /^3\d{9}$/.test(digitos) ? '57' + digitos : digitos;
+}
+
 /** Botón de contacto directo, solo si la persona lo dejó explícitamente
  *  público. Si parece teléfono abre WhatsApp; si parece correo, un mailto;
  *  si no, se muestra como texto (puede ser un usuario de red social). */
@@ -309,7 +318,7 @@ function enlaceContacto(valor) {
   const soloDigitos = v.replace(/\D/g, '');
   const pareceTelefono = soloDigitos.length >= 7 && /^[+\d][\d\s()+-]*$/.test(v);
   if (pareceTelefono) {
-    return `<a class="btn btn-primario" href="https://wa.me/${soloDigitos}" ` +
+    return `<a class="btn btn-primario" href="https://wa.me/${conIndicativo(soloDigitos)}" ` +
            `target="_blank" rel="noopener">📲 Escribir por WhatsApp</a>`;
   }
   if (v.includes('@') && !v.includes(' ')) {
