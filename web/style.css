@@ -415,6 +415,18 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
 .pulso-titular.sinmedir { border-color: #c77dff; background: rgba(199, 125, 255, .08); }
 .pulso-titular b { display: block; color: var(--texto); font-weight: 600; }
 
+/* Evidencia de sondas dentro de una tarjeta sin medición. El borde de color
+   la separa del texto de la clase, que ahí dice "no sabemos": esto sí se sabe. */
+.sondas-zona {
+  margin: 8px 0 0; padding: 8px 10px; border-radius: 0 6px 6px 0;
+  font-size: 12px; line-height: 1.5;
+  border-left: 3px solid var(--linea); background: var(--bg-3);
+}
+.sondas-zona.viva  { border-left-color: var(--baja);     background: rgba(52, 199, 89, .08); }
+.sondas-zona.caida { border-left-color: var(--critica);  background: rgba(255, 59, 48, .08); }
+.sondas-zona.vacia { color: var(--texto-2); }
+.sondas-zona .hint { display: block; margin-top: 4px; }
+
 /* Lo que sigue sabiéndose por fuentes que no son IODA. Va en verde porque es
    lo único afirmativo de un panel que por lo demás dice "no sé". */
 .respaldo-vivo {

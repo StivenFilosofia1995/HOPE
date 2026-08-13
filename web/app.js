@@ -697,18 +697,21 @@ async function cargarSondasRipe() {
       `).addTo(S.capas.sondas);
     });
     actualizarCuenta('sondas', d.total);
-    repintarSiElPulsoQuedoCiego();
+    repintarSiFaltanMediciones();
   } catch (e) {
     actualizarCuenta('sondas', '—');
   }
 }
 
 /* Las fuentes cargan en paralelo y no en orden. Si IODA ya falló y las sondas
-   llegan después, el titular tiene que rehacerse para incluirlas: si no, la
-   evidencia que sí tenemos queda fuera de la pantalla por una carrera. */
-function repintarSiElPulsoQuedoCiego() {
+   llegan después, el panel tiene que rehacerse para incluirlas: si no, la
+   evidencia que sí tenemos queda fuera de la pantalla por una carrera.
+
+   Basta con que UNA zona esté sin medición: es justo esa tarjeta la que tiene
+   un hueco que las sondas pueden llenar. */
+function repintarSiFaltanMediciones() {
   if (!S.pulso || !S.pulso.zonas) return;
-  if (S.pulso.zonas.some((z) => z.clase !== 'sin_medicion')) return;
+  if (!S.pulso.zonas.some((z) => z.clase === 'sin_medicion')) return;
   pintarPulso(S.pulso);
 }
 
@@ -980,6 +983,40 @@ function pintarFilasPulso(d) {
       : '');
 }
 
+/* Una zona sin medición de IODA no tiene por qué quedarse en blanco: las
+   sondas RIPE Atlas son otra fuente, con otro dueño y otra máquina, y una
+   sonda conectada es la prueba más dura que hay de que EN ESE PUNTO hay
+   internet ahora mismo — es un aparato físico hablando con RIPE en este
+   momento, no una estimación.
+
+   Cuando tampoco hay sondas se dice igual de claro. «Sin forma de medir aquí»
+   es información: le dice a quien coordina que ese punto necesita una
+   confirmación humana, y evita que el silencio se lea como calma. */
+function sondasDeZona(codigo) {
+  const porDep = S.sondas && S.sondas.por_departamento;
+  if (!porDep) return '';
+  const s = porDep[String(codigo)];
+
+  if (!s || (!s.conectadas && !s.caidas_tras_sismo)) {
+    return `<p class="sondas-zona vacia">Sin sondas de medición en este departamento:
+      aquí no hay ningún punto que podamos comprobar. Hace falta confirmación
+      por radio o en terreno.</p>`;
+  }
+
+  const partes = [];
+  if (s.conectadas) {
+    partes.push(`<b>${s.conectadas} sonda${s.conectadas === 1 ? '' : 's'} física${s.conectadas === 1 ? '' : 's'}
+      respondiendo aquí ahora mismo</b>: en ${s.conectadas === 1 ? 'ese punto' : 'esos puntos'} sí hay internet.`);
+  }
+  if (s.caidas_tras_sismo) {
+    partes.push(`<b>${s.caidas_tras_sismo} sonda${s.caidas_tras_sismo === 1 ? '' : 's'} caída${s.caidas_tras_sismo === 1 ? '' : 's'}
+      desde el sismo</b>: ahí se perdió la conexión y no ha vuelto.`);
+  }
+  return `<p class="sondas-zona ${s.conectadas ? 'viva' : 'caida'}">${partes.join(' ')}
+    <span class="hint">Medido por RIPE Atlas, que no depende de la fuente que falló.
+    Son pocos puntos: no cubren el departamento entero.</span></p>`;
+}
+
 /* La tarjeta va en dos niveles. Arriba, lo que cualquiera necesita: qué pasa y
    qué significa. Abajo, plegado, lo técnico para quien vaya a actuar.
 
@@ -1010,6 +1047,7 @@ function filaPulso(z) {
 
       <p class="titular-zona">${escapar(c.titular)}</p>
       <p class="explica-zona">${escapar(c.explica)}</p>
+      ${z.clase === 'sin_medicion' ? sondasDeZona(z.codigo) : ''}
 
       ${QUE_FALTA ? `
         <div class="que-falta falta-${c.falta}">
@@ -1482,7 +1520,7 @@ async function cargarLuzMunicipios() {
 
     actualizarCuenta('luzMun', conProblema);
     pintarPanelLuz(d, cont);
-    repintarSiElPulsoQuedoCiego();
+    repintarSiFaltanMediciones();
   } catch (e) {
     if (cont) cont.innerHTML = `<p class="hint err">No se pudo medir: ${escapar(e.message)}</p>`;
   }

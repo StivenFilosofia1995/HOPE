@@ -677,9 +677,94 @@ def ripe_atlas_colombia() -> dict:
                 "ausencia de problema, solo ausencia de medición ahí.",
         "total": len(sondas),
         "sondas": sondas,
+        "por_departamento": _sondas_por_departamento(sondas),
     }
     _cache_guardar(clave, res)
     return res
+
+
+# ── Sondas agrupadas por departamento ───────────────────────────────────────
+#
+# Por qué existe esto: IODA se cae (pasó el 13 de agosto de 2026) y con él se
+# iba la única respuesta a "¿hay internet en esta zona?". RIPE Atlas es una
+# fuente distinta, con dueño distinto y máquina distinta, y sigue en pie.
+#
+# Una sonda conectada es la evidencia más dura que existe de que en ESE PUNTO
+# hay internet ahora mismo: es un aparato físico que está hablando con RIPE en
+# este momento. No es una estimación ni un promedio.
+#
+# El límite, que va escrito en la respuesta y en pantalla: son decenas de
+# puntos en todo el país. Un departamento sin sondas no es un departamento sin
+# internet, es un departamento sin medición — y eso hay que decirlo así.
+#
+# La asignación usa los polígonos REALES (los mismos que pinta el mapa), no la
+# distancia al centroide: con centroides, una sonda de Medellín caía en Caldas
+# y una de Bogotá en Tolima, que es inventar ubicaciones.
+
+_DEPTOS_GEO: Optional[list] = None
+
+
+def _poligonos_departamentos() -> list:
+    """Límites de geoBoundaries que ya viajan con el frontend. Se leen una vez."""
+    global _DEPTOS_GEO
+    if _DEPTOS_GEO is None:
+        ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "web", "data", "departamentos.geojson")
+        try:
+            with open(ruta, encoding="utf-8") as f:
+                _DEPTOS_GEO = json.load(f).get("features", [])
+        except Exception:
+            _DEPTOS_GEO = []
+    return _DEPTOS_GEO
+
+
+def _en_anillo(lat: float, lon: float, anillo: list) -> bool:
+    """Cruce de rayos: cuenta cuántas veces un rayo horizontal corta el borde."""
+    dentro = False
+    n = len(anillo)
+    for i in range(n):
+        x1, y1 = anillo[i][0], anillo[i][1]
+        x2, y2 = anillo[(i + 1) % n][0], anillo[(i + 1) % n][1]
+        if (y1 > lat) != (y2 > lat):
+            corte = (x2 - x1) * (lat - y1) / (y2 - y1) + x1
+            if lon < corte:
+                dentro = not dentro
+    return dentro
+
+
+def departamento_de(lat: float, lon: float) -> Optional[int]:
+    """Código IODA del departamento que contiene el punto, o None si cae fuera."""
+    for f in _poligonos_departamentos():
+        geom = f.get("geometry") or {}
+        tipo, coords = geom.get("type"), geom.get("coordinates") or []
+        partes = [coords] if tipo == "Polygon" else coords if tipo == "MultiPolygon" else []
+        for parte in partes:
+            if not parte:
+                continue
+            # parte[0] es el contorno exterior; parte[1:] son huecos.
+            if _en_anillo(lat, lon, parte[0]) and not any(
+                    _en_anillo(lat, lon, hueco) for hueco in parte[1:]):
+                return (f.get("properties") or {}).get("codigo")
+    return None
+
+
+def _sondas_por_departamento(sondas: list[dict]) -> dict:
+    """Resumen por departamento: cuántas sondas responden y cuántas se cayeron."""
+    salida: dict[str, dict] = {}
+    for s in sondas:
+        cod = departamento_de(s["lat"], s["lon"])
+        if cod is None:
+            continue
+        d = salida.setdefault(str(cod), {
+            "codigo": cod, "nombre": DEPARTAMENTOS.get(cod, {}).get("nombre", "?"),
+            "conectadas": 0, "caidas_tras_sismo": 0, "ids": []})
+        if s["clase"] == "activa":
+            d["conectadas"] += 1
+        else:
+            d["caidas_tras_sismo"] += 1
+        if len(d["ids"]) < 12:
+            d["ids"].append(s["id"])
+    return salida
 
 
 # ═══════════════════════════════════════════════════════════════════════════
