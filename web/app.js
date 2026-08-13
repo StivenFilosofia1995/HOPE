@@ -606,31 +606,37 @@ function radioCorte(score) {
 }
 
 // ── Iconos pedagógicos (SVG en línea, sin depender de fuentes externas) ────
-// Mismo símbolo en el mapa y en la leyenda: arcos de wifi (tachados si hay
-// corte, con "?" si es punto ciego) y rayo tachado para energía no entregada.
-// Así se entiende de un vistazo sin tener que leer el popup.
+// Mismo símbolo en el mapa y en la leyenda: el ícono base (wifi / rayo) dice
+// DE QUÉ servicio se habla; encima va la señal universal de "prohibido" —
+// círculo rojo con diagonal, el mismo lenguaje que "no fumar" — porque se
+// entiende sin tener que descifrar arcos de wifi. El punto ciego usa círculo
+// PUNTEADO en vez de sólido: no es un "no" confirmado, es "no sabemos".
 
 function svgWifi(color, estado) {
-  const debil = estado === 'corte' ? .5 : 1;
-  const tachado = estado === 'corte'
-    ? `<line x1="3" y1="21" x2="21" y2="3" stroke="${color}" stroke-width="2.6" stroke-linecap="round"/>`
+  const debil = estado === 'corte' ? .3 : 1;
+  const prohibido = estado === 'corte'
+    ? `<circle cx="12" cy="12" r="10" fill="none" stroke="#ff3b30" stroke-width="2.4"/>
+       <line x1="5.3" y1="18.7" x2="18.7" y2="5.3" stroke="#ff3b30" stroke-width="2.6" stroke-linecap="round"/>`
     : '';
   const duda = estado === 'duda'
-    ? `<text x="12" y="12.8" text-anchor="middle" font-size="9" font-weight="700" fill="${color}">?</text>`
+    ? `<circle cx="12" cy="12" r="10" fill="none" stroke="${color}" stroke-width="1.8" stroke-dasharray="3 2.4"/>
+       <text x="12" y="15.6" text-anchor="middle" font-size="10.5" font-weight="800" fill="${color}">?</text>`
     : '';
   return `<svg viewBox="0 0 24 24" width="100%" height="100%">
-    <circle cx="12" cy="19" r="1.7" fill="${color}"/>
-    <path d="M7 15.2a7.3 7.3 0 0 1 10 0" fill="none" stroke="${color}" stroke-width="2.1" stroke-linecap="round"/>
+    <circle cx="12" cy="19" r="1.7" fill="${color}" opacity="${debil}"/>
+    <path d="M7 15.2a7.3 7.3 0 0 1 10 0" fill="none" stroke="${color}" stroke-width="2.1"
+          stroke-linecap="round" opacity="${debil}"/>
     <path d="M3.3 11a12.4 12.4 0 0 1 17.4 0" fill="none" stroke="${color}" stroke-width="2.1"
           stroke-linecap="round" opacity="${debil}"/>
-    ${tachado}${duda}
+    ${prohibido}${duda}
   </svg>`;
 }
 
 function svgRayoCorte(color) {
   return `<svg viewBox="0 0 24 24" width="100%" height="100%">
-    <path d="M13 2 5 14h5.5l-1 8L19 10h-5.5l-.5-8Z" fill="${color}"/>
-    <line x1="3" y1="21" x2="21" y2="3" stroke="${color}" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M13 2 5 14h5.5l-1 8L19 10h-5.5l-.5-8Z" fill="${color}" opacity=".35"/>
+    <circle cx="12" cy="12" r="10" fill="none" stroke="#ff3b30" stroke-width="2.4"/>
+    <line x1="5.3" y1="18.7" x2="18.7" y2="5.3" stroke="#ff3b30" stroke-width="2.6" stroke-linecap="round"/>
   </svg>`;
 }
 
