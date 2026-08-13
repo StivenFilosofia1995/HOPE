@@ -291,6 +291,7 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
 #form-reporte label { margin-top: 12px; }
 .coords { font-size: 11px; color: var(--texto-2); font-variant-numeric: tabular-nums; margin: 0 0 4px; }
 .pii { color: var(--alta); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
+.pub { color: #34c759; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
 .modal-acciones { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
 .lista-entrega { font-size: 13px; line-height: 1.6; color: var(--texto-2); padding-left: 18px; }
 .lista-entrega li { margin-bottom: 8px; }

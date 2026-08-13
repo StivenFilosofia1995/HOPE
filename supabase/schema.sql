@@ -88,6 +88,7 @@ create table if not exists public.zonas (
   urgencia          smallint    not null default 2 check (urgencia between 1 and 4), -- 1 crítica … 4 baja
   verificado        boolean     not null default false,
   verificado_por    text        not null default '' check (length(verificado_por) <= 120),
+  contacto_publico  text        not null default '' check (length(contacto_publico) <= 80),
   creado_en         timestamptz not null default now(),
   actualizado_en    timestamptz not null default now()
 );
@@ -119,6 +120,7 @@ create table if not exists public.aportes (
   lat            double precision check (lat between -4.3 and 13.5),
   lon            double precision check (lon between -82.0 and -66.8),
   zona_id        uuid references public.zonas(id) on delete set null,
+  contacto_publico text        not null default '' check (length(contacto_publico) <= 80),
   creado_en      timestamptz   not null default now(),
   actualizado_en timestamptz   not null default now()
 );
@@ -129,6 +131,16 @@ comment on table public.aportes is
 create index if not exists ix_aportes_tipo   on public.aportes (tipo);
 create index if not exists ix_aportes_estado on public.aportes (estado);
 create index if not exists ix_aportes_zona   on public.aportes (zona_id);
+
+-- ── Migración: contacto público opcional (instalaciones previas a este campo) ──
+-- ADD COLUMN IF NOT EXISTS es un no-op si ya se creó arriba (instalación
+-- nueva). En una instalación existente, esto es lo que realmente agrega la
+-- columna: distinto de `contactos.telefono`, que es privado y nunca se lee.
+-- Este es opcional y lo decide quien reporta: si lo llena, CUALQUIERA lo ve.
+alter table public.zonas
+  add column if not exists contacto_publico text not null default '' check (length(contacto_publico) <= 80);
+alter table public.aportes
+  add column if not exists contacto_publico text not null default '' check (length(contacto_publico) <= 80);
 
 -- ── Contactos: AQUÍ Y SOLO AQUÍ van los datos personales ─────────────
 

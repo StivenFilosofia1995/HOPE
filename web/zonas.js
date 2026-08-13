@@ -259,6 +259,7 @@ function popupZona(z) {
       ? `<div style="margin-top:8px">Aportes asignados: ${apoyos.map((a) =>
           (APORTE_TIPOS[a.tipo] || APORTE_TIPOS.otro).icono).join(' ')}</div>`
       : ''}
+    ${enlaceContacto(z.contacto_publico)}
     <button class="btn btn-primario" id="sumar-${z.id}">Aportar a esta zona</button>
   `;
 }
@@ -286,6 +287,7 @@ function pintarAportes() {
         <dt>Ofrecido</dt><dd>${fechaLocal(a.creado_en)}</dd>
       </dl>
       ${a.descripcion ? `<div style="margin-top:8px">${escapar(a.descripcion)}</div>` : ''}
+      ${enlaceContacto(a.contacto_publico)}
     `, { maxWidth: 300 }).addTo(S.capas.aportes);
     n++;
   });
@@ -294,6 +296,24 @@ function pintarAportes() {
 }
 
 // ── Paneles ─────────────────────────────────────────────────────────────────
+
+/** Botón de contacto directo, solo si la persona lo dejó explícitamente
+ *  público. Si parece teléfono abre WhatsApp; si parece correo, un mailto;
+ *  si no, se muestra como texto (puede ser un usuario de red social). */
+function enlaceContacto(valor) {
+  const v = (valor || '').trim();
+  if (!v) return '';
+  const soloDigitos = v.replace(/\D/g, '');
+  const pareceTelefono = soloDigitos.length >= 7 && /^[+\d][\d\s()+-]*$/.test(v);
+  if (pareceTelefono) {
+    return `<a class="btn btn-primario" href="https://wa.me/${soloDigitos}" ` +
+           `target="_blank" rel="noopener">📲 Escribir por WhatsApp</a>`;
+  }
+  if (v.includes('@') && !v.includes(' ')) {
+    return `<a class="btn btn-sec" href="mailto:${encodeURIComponent(v)}">✉ ${escapar(v)}</a>`;
+  }
+  return `<div class="hint">Contacto: <strong>${escapar(v)}</strong></div>`;
+}
 
 /** Resumen en lenguaje llano: es lo que se ve de un vistazo y lo que sirve
  *  para una captura de pantalla en Instagram. */
@@ -461,6 +481,7 @@ async function guardarZona(ev) {
     radio_m: parseInt(f.radio_m.value, 10) || 500,
     personas_estimadas: parseInt(f.personas.value, 10) || 0,
     urgencia: parseInt(f.urgencia.value, 10) || 2,
+    contacto_publico: (f.contacto_publico?.value || '').trim(),
     // verificado y estado los fija la política de RLS; mandarlos explícitos
     // deja claro que no se está intentando colar un registro pre-verificado.
     verificado: false,
@@ -468,8 +489,7 @@ async function guardarZona(ev) {
   };
 
   try {
-    const { data, error } = await Z.sb.from('zonas').insert(fila).select().single();
-    if (error) throw new Error(error.message);
+    const data = await insertarConRespaldo('zonas', fila);
     await guardarContacto({ zona_id: data.id }, f);
     document.querySelector('#modal-zona').hidden = true;
     toast('Zona publicada. Ya la ven todos.');
@@ -496,12 +516,12 @@ async function guardarAporte(ev) {
     lat: Z.coords ? Z.coords[0] : null,
     lon: Z.coords ? Z.coords[1] : null,
     zona_id: f.dataset.zonaId || null,
+    contacto_publico: (f.contacto_publico?.value || '').trim(),
     estado: 'ofrecido',
   };
 
   try {
-    const { data, error } = await Z.sb.from('aportes').insert(fila).select().single();
-    if (error) throw new Error(error.message);
+    const data = await insertarConRespaldo('aportes', fila);
     await guardarContacto({ aporte_id: data.id }, f);
     document.querySelector('#modal-aporte').hidden = true;
     toast('Aporte publicado. Gracias.');
@@ -510,6 +530,23 @@ async function guardarAporte(ev) {
   } finally {
     btn.disabled = false;
   }
+}
+
+/** Inserta y, si la base todavía no tiene `contacto_publico` (falta re-correr
+ *  supabase/schema.sql), reintenta sin ese campo en vez de perder todo el
+ *  registro: el punto en el mapa vale más que el contacto de contacto rápido. */
+async function insertarConRespaldo(tabla, fila) {
+  let { data, error } = await Z.sb.from(tabla).insert(fila).select().single();
+  if (error && 'contacto_publico' in fila && /contacto_publico/i.test(error.message)) {
+    const { contacto_publico, ...sinContacto } = fila;
+    ({ data, error } = await Z.sb.from(tabla).insert(sinContacto).select().single());
+    if (!error) {
+      toast('Publicado, pero falta actualizar la base para el contacto público ' +
+            '(re-correr supabase/schema.sql).', true);
+    }
+  }
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 /** El contacto va a su propia tabla, que nadie puede leer con la anon key.
