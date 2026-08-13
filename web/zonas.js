@@ -429,8 +429,8 @@ function activarUbicar(modo) {
   if (hint) {
     hint.hidden = !Z.modo;
     hint.textContent = Z.modo === 'zona'
-      ? 'Toca en el mapa el lugar de la zona. Esc para cancelar.'
-      : 'Toca en el mapa dónde está tu aporte. Esc para cancelar.';
+      ? 'Paso 2 de 2: toca el lugar exacto donde está el problema. Esc para cancelar.'
+      : 'Paso 2 de 2: toca dónde está disponible tu recurso. Esc para cancelar.';
   }
   document.querySelector('#btn-zona')?.classList.toggle('activo', Z.modo === 'zona');
   document.querySelector('#btn-aporte')?.classList.toggle('activo', Z.modo === 'aporte');

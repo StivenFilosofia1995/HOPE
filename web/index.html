@@ -33,15 +33,29 @@
 
     <!-- ═══ Acción principal ═══ -->
     <section class="bloque acciones-principales">
+      <div class="orientacion">
+        <h2>¿Qué necesitas hacer?</h2>
+        <p>Elige una opción. Luego te pediremos tocar el lugar exacto en el mapa.</p>
+      </div>
       <button id="btn-zona" class="btn btn-grande btn-necesita">
         <span class="ico">📍</span>
-        <span><b>Reportar una zona</b><small>Aquí falta luz, internet o hay que buscar gente</small></span>
+        <span><b>Necesito ayuda / vi un problema</b><small>Falta luz, internet, alimentos o hay personas por buscar</small></span>
       </button>
       <button id="btn-aporte" class="btn btn-grande btn-aporta">
         <span class="ico">🤝</span>
-        <span><b>Quiero aportar</b><small>Tengo Starlink, generador, panel solar…</small></span>
+        <span><b>Puedo ayudar con un recurso</b><small>Tengo Starlink, generador, transporte, alimentos…</small></span>
       </button>
       <p class="hint" id="hint-ubicar" hidden></p>
+    </section>
+
+    <section class="bloque guia-rapida">
+      <h2>Cómo usar el mapa</h2>
+      <ol>
+        <li><span>1</span><p><strong>Ubica una zona</strong> tocando un círculo o un símbolo del mapa.</p></li>
+        <li><span>2</span><p><strong>Lee qué necesita</strong>, su urgencia y si el reporte está confirmado.</p></li>
+        <li><span>3</span><p><strong>Conecta o reporta</strong> usando uno de los botones de arriba.</p></li>
+      </ol>
+      <p class="hint">Los círculos con línea punteada son reportes ciudadanos aún sin confirmar.</p>
     </section>
 
     <!-- ═══ Resumen: lo que se ve de un vistazo ═══ -->
@@ -61,50 +75,47 @@
       <div id="lista-aportes" class="chips"></div>
     </section>
 
-    <!-- ═══ Cortes medidos ═══ -->
-    <section class="bloque">
-      <div class="bloque-head">
-        <h2>Cortes medidos</h2>
-        <select id="f-ventana" class="mini">
-          <option value="96">96 h</option>
-          <option value="168">7 días</option>
-          <option value="48">48 h</option>
-          <option value="720">30 días</option>
-        </select>
+    <!-- ═══ Monitoreo experto (secundario) ═══ -->
+    <details class="bloque plegable datos-tecnicos">
+      <summary><h2>Datos técnicos y monitoreo</h2></summary>
+      <p class="hint">Fuentes automáticas que complementan los reportes ciudadanos. No sustituyen una confirmación en terreno.</p>
+
+      <div class="sub-bloque">
+        <div class="bloque-head">
+          <h3>Cortes medidos</h3>
+          <select id="f-ventana" class="mini">
+            <option value="96">96 h</option>
+            <option value="168">7 días</option>
+            <option value="48">48 h</option>
+            <option value="720">30 días</option>
+          </select>
+        </div>
+        <p class="hint">IODA mide alcanzabilidad de red y XM energía no entregada.</p>
+        <div id="prioridad" class="prioridad"></div>
+        <div id="energia-resumen" class="energia"></div>
+        <p class="hint" id="cortes-nota"></p>
       </div>
-      <p class="hint">Medido por <strong>IODA</strong> (alcanzabilidad de red) y
-        <strong>XM</strong> (energía no entregada). Dos sistemas independientes.
-        Esto no lo reporta nadie: se mide.</p>
-      <div id="prioridad" class="prioridad"></div>
-      <div id="energia-resumen" class="energia"></div>
-      <p class="hint" id="cortes-nota"></p>
-    </section>
 
-    <!-- ═══ Sismos recientes (monitoreo continuo, USGS) ═══ -->
-    <section class="bloque">
-      <h2>Sismos recientes</h2>
-      <p class="hint">Ventana rodante sobre todo el país — no solo réplicas de
-        este evento. Catálogo <strong>USGS</strong>, en vivo.</p>
-      <div id="sismos-recientes" class="prioridad"></div>
-      <p class="hint" id="sismos-nota"></p>
-    </section>
+      <div class="sub-bloque">
+        <h3>Sismos recientes</h3>
+        <p class="hint">Catálogo USGS en vivo para todo el país.</p>
+        <div id="sismos-recientes" class="prioridad"></div>
+        <p class="hint" id="sismos-nota"></p>
+      </div>
 
-    <!-- ═══ Clima en zonas afectadas ═══ -->
-    <section class="bloque">
-      <h2>Clima en zonas afectadas</h2>
-      <p class="hint">Lluvia intensa complica el acceso vial a zonas ya
-        golpeadas por el sismo. Pronóstico abierto <strong>Open-Meteo</strong>,
-        no es alerta oficial del IDEAM.</p>
-      <div id="clima-zonas" class="energia"></div>
-      <p class="hint" id="clima-nota"></p>
-    </section>
+      <div class="sub-bloque">
+        <h3>Clima en zonas afectadas</h3>
+        <p class="hint">Pronóstico Open-Meteo; no es una alerta oficial del IDEAM.</p>
+        <div id="clima-zonas" class="energia"></div>
+        <p class="hint" id="clima-nota"></p>
+      </div>
 
-    <!-- ═══ Capas ═══ -->
-    <section class="bloque">
-      <h2>Capas del mapa</h2>
-      <div id="capas"></div>
-      <div id="estado-carga" class="estado"></div>
-    </section>
+      <div class="sub-bloque">
+        <h3>Capas del mapa</h3>
+        <div id="capas"></div>
+        <div id="estado-carga" class="estado"></div>
+      </div>
+    </details>
 
     <!-- ═══ Contexto del sismo ═══ -->
     <details class="bloque plegable">

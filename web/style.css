@@ -173,6 +173,12 @@ select:focus, input:focus, textarea:focus { outline: 1px solid var(--acento); bo
 
 /* ── Acciones principales ────────────────────────────────── */
 .acciones-principales { display: grid; gap: 8px; }
+.orientacion {
+  background: rgba(77, 163, 255, .08); border-left: 3px solid var(--acento);
+  padding: 10px 12px; border-radius: 4px;
+}
+.orientacion h2 { margin-bottom: 4px; color: var(--texto); font-size: 13px; text-transform: none; letter-spacing: 0; }
+.orientacion p { margin: 0; color: var(--texto-2); font-size: 12px; line-height: 1.45; }
 .btn-grande {
   display: grid; grid-template-columns: auto 1fr; gap: 12px;
   align-items: center; text-align: left; padding: 12px 14px; width: 100%;
@@ -191,6 +197,16 @@ select:focus, input:focus, textarea:focus { outline: 1px solid var(--acento); bo
   border-color: rgba(255, 59, 48, .4);
   color: #ffc9c5;
 }
+
+/* ── Guía para personas que llegan por primera vez ───────── */
+.guia-rapida ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.guia-rapida li { display: grid; grid-template-columns: 24px 1fr; gap: 8px; align-items: start; }
+.guia-rapida li > span {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--acento); color: #06121f; font-size: 12px; font-weight: 700;
+}
+.guia-rapida li p { margin: 2px 0 0; color: var(--texto-2); font-size: 12px; line-height: 1.4; }
+.guia-rapida li strong { color: var(--texto); }
 
 /* ── Resumen público ─────────────────────────────────────── */
 .resumen { display: grid; gap: 4px; }
@@ -222,6 +238,10 @@ select:focus, input:focus, textarea:focus { outline: 1px solid var(--acento); bo
 .plegable summary::before { content: '▸'; color: var(--texto-2); font-size: 10px; }
 .plegable[open] summary::before { content: '▾'; }
 .plegable summary h2 { margin: 0; }
+.datos-tecnicos > .hint { margin: 12px 0 0; }
+.sub-bloque { padding: 14px 0; border-bottom: 1px solid var(--linea); }
+.sub-bloque:last-child { border-bottom: 0; padding-bottom: 0; }
+.sub-bloque h3 { margin: 0 0 7px; font-size: 12px; color: var(--texto); }
 
 .dos-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
