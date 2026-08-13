@@ -677,6 +677,7 @@ async function cargarSondasRipe() {
   }
   try {
     const d = await cargarJSON(`${Almacen.base}/cortes/sondas`);
+    S.sondas = d;                       // evidencia de respaldo si IODA se cae
     d.sondas.forEach((s) => {
       const activa = s.clase === 'activa';
       const color = activa ? '#30d158' : '#ff3b30';
@@ -696,9 +697,19 @@ async function cargarSondasRipe() {
       `).addTo(S.capas.sondas);
     });
     actualizarCuenta('sondas', d.total);
+    repintarSiElPulsoQuedoCiego();
   } catch (e) {
     actualizarCuenta('sondas', '—');
   }
+}
+
+/* Las fuentes cargan en paralelo y no en orden. Si IODA ya falló y las sondas
+   llegan después, el titular tiene que rehacerse para incluirlas: si no, la
+   evidencia que sí tenemos queda fuera de la pantalla por una carrera. */
+function repintarSiElPulsoQuedoCiego() {
+  if (!S.pulso || !S.pulso.zonas) return;
+  if (S.pulso.zonas.some((z) => z.clase !== 'sin_medicion')) return;
+  pintarPulso(S.pulso);
 }
 
 // ── Panel: clima en zonas afectadas (Open-Meteo) ────────────────────────────
@@ -868,6 +879,7 @@ function pintarPulso(d) {
         <span class="firma-ciega">Esto NO quiere decir que no haya internet: quiere
           decir que la fuente no nos contestó. No se puede concluir nada de este
           vacío — confirmar por radio o en terreno.</span>
+        ${respaldoIndependiente()}
         ${motivo ? `<span class="motivo-fallo">Motivo técnico: ${escapar(motivo)}</span>` : ''}
       </div>`;
     return pintarFilasPulso(d);
@@ -899,6 +911,45 @@ function pintarPulso(d) {
     </div>`;
 
   pintarFilasPulso(d);
+}
+
+/* Cuando IODA cae, la pregunta «¿hay internet y hay luz?» NO se queda sin
+   respuesta: hay dos fuentes que no pasan por IODA y que se consultan igual.
+
+     · RIPE Atlas — sondas físicas con coordenadas propias. Una sonda que
+       responde es prueba de que EN ESE PUNTO hay internet ahora mismo. Son
+       decenas en todo el país, así que prueban dónde SÍ hay, no dónde no.
+     · VIIRS/Black Marble — luz nocturna por municipio, medida por satélite.
+       No necesita que la red del país esté en pie para dar su respuesta.
+
+   Verificado el 2026-08-13, con IODA rechazando conexiones: RIPE Atlas
+   contestó en 2,7 s y GIBS en 17,6 s. Dejar la pantalla vacía teniendo esto
+   cargado sería tirar la única evidencia disponible. */
+function respaldoIndependiente() {
+  const trozos = [];
+
+  if (S.sondas && Array.isArray(S.sondas.sondas)) {
+    const activas = S.sondas.sondas.filter((s) => s.clase === 'activa').length;
+    const caidas = S.sondas.sondas.length - activas;
+    if (activas || caidas) {
+      trozos.push(
+        `<b>${activas} sonda${activas === 1 ? '' : 's'} física${activas === 1 ? '' : 's'} ` +
+        `respondiendo</b> en el país${caidas ? ` y ${caidas} caída${caidas === 1 ? '' : 's'} desde el sismo` : ''}. ` +
+        'Son puntos exactos y no dependen de IODA: mira la capa de sondas en el mapa.');
+    }
+  }
+
+  if (S.luzMun && Array.isArray(S.luzMun.municipios)) {
+    const bajaron = S.luzMun.municipios.filter(
+      (m) => typeof m.cambio_pct === 'number' && m.cambio_pct <= -10).length;
+    trozos.push(bajaron
+      ? `<b>La luz por satélite sí se midió:</b> ${bajaron} municipio${bajaron === 1 ? '' : 's'} ` +
+        'con caída de luz nocturna. Esa capa es independiente y sigue en pie.'
+      : '<b>La luz por satélite sí se midió</b> y no marca caídas fuertes de luz nocturna.');
+  }
+
+  if (!trozos.length) return '';
+  return `<span class="respaldo-vivo">Lo que sí sabemos por otras fuentes:<br>${trozos.join('<br>')}</span>`;
 }
 
 /** Las tarjetas y el pie. Va aparte del titular porque cuando la fuente falla
@@ -1414,6 +1465,7 @@ async function cargarLuzMunicipios() {
   }
   try {
     const d = await cargarJSON(`${Almacen.base}/cortes/luz-municipios`);
+    S.luzMun = d;                       // evidencia de respaldo si IODA se cae
     S.capas.luzMun.clearLayers();
     let conProblema = 0;
 
@@ -1430,6 +1482,7 @@ async function cargarLuzMunicipios() {
 
     actualizarCuenta('luzMun', conProblema);
     pintarPanelLuz(d, cont);
+    repintarSiElPulsoQuedoCiego();
   } catch (e) {
     if (cont) cont.innerHTML = `<p class="hint err">No se pudo medir: ${escapar(e.message)}</p>`;
   }
@@ -1763,6 +1816,17 @@ function pintarPanelPrioridad(prio) {
     const e = document.createElement('p');
     e.className = 'hint err';
     e.textContent = 'XM no respondió: ' + prio.error_energia;
+    cont.appendChild(e);
+  }
+  // Si IODA cayó, la tabla sigue en pie con lo de XM, pero el orden ya no
+  // significa lo mismo y hay que decirlo donde se está leyendo, no en la
+  // consola: sin este aviso, un score 0 se leería como "aquí no pasa nada".
+  if (prio.error_internet) {
+    const e = document.createElement('p');
+    e.className = 'hint err';
+    e.textContent = 'IODA no respondió: ' + prio.error_internet +
+      ' — el orden de esta lista NO incluye internet ahora mismo. Los ceros ' +
+      'de score son falta de medición, no zonas sanas.';
     cont.appendChild(e);
   }
 }

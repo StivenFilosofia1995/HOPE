@@ -415,6 +415,16 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
 .pulso-titular.sinmedir { border-color: #c77dff; background: rgba(199, 125, 255, .08); }
 .pulso-titular b { display: block; color: var(--texto); font-weight: 600; }
 
+/* Lo que sigue sabiéndose por fuentes que no son IODA. Va en verde porque es
+   lo único afirmativo de un panel que por lo demás dice "no sé". */
+.respaldo-vivo {
+  display: block; margin-top: 8px; padding: 8px 10px;
+  border-left: 3px solid var(--baja); border-radius: 0 6px 6px 0;
+  background: rgba(52, 199, 89, .08);
+  font-size: 12px; line-height: 1.5; color: var(--texto);
+}
+.respaldo-vivo b { display: inline; font-weight: 600; }
+
 /* El motivo técnico va a la vista y no escondido en la consola: es lo único
    que permite arreglar la causa en vez de adivinarla. */
 .motivo-fallo {

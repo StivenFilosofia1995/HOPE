@@ -452,7 +452,23 @@ def prioridad_enlaces(desde: int, hasta: int) -> dict:
     decisión final depende de acceso por vía, seguridad y de lo que ya esté
     haciendo el organismo de socorro que coordina la zona.
     """
-    internet = ioda_resumen(desde, hasta)
+    # Simétrico con XM: si una de las dos fuentes cae, el ranking se entrega con
+    # la otra y lo dice. Antes, un IODA caído devolvía 502 y borraba también lo
+    # que XM sí había medido — se perdía información disponible por un fallo
+    # ajeno. Los departamentos golpeados se listan igual, con score nulo, para
+    # que la ausencia de medición se vea en vez de desaparecer de la tabla.
+    try:
+        internet = ioda_resumen(desde, hasta)
+        error_internet = None
+    except Exception as e:
+        error_internet = f"{type(e).__name__}: {e}"
+        internet = {"departamentos": [
+            {"codigo": cod, "nombre": DEPARTAMENTOS[cod]["nombre"],
+             "lat": DEPARTAMENTOS[cod]["lat"], "lon": DEPARTAMENTOS[cod]["lon"],
+             "score": 0, "eventos": 0, "afectado_sismo": True}
+            for cod in sorted(AFECTADOS_SISMO)
+        ]}
+
     try:
         energia = xm_no_atendida(date(2026, 7, 25), date.today())
         por_depto_energia: dict[int, dict] = {}
@@ -483,6 +499,7 @@ def prioridad_enlaces(desde: int, hasta: int) -> dict:
         "ventana": {"desde": desde, "hasta": hasta},
         "fuentes": ["IODA (Georgia Tech)", "XM (SIN Colombia)"],
         "error_energia": error_energia,
+        "error_internet": error_internet,
         "advertencia": "Ordenamiento de evidencia, no plan de despliegue. Un score "
                        "bajo puede significar 'no hay nada que medir', que suele ser "
                        "peor que un score alto. Contrastar con el organismo de "
