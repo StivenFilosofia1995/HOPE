@@ -62,11 +62,32 @@ const RANGO_CLASE_JS = {
   recuperando: 6, normal: 7, sin_medicion: 8,
 };
 
+const INTENTOS_IODA = 3;      // == fuentes.INTENTOS_HTTP
+const ESPERA_REINTENTO_MS = 800;
+
+const dormir = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
 async function iodaSerie(tipo, codigo, desde, hasta, ds) {
   const u = `${IODA_BASE}/signals/raw/${tipo}/${codigo}` +
             `?from=${desde}&until=${hasta}&datasource=${ds}`;
-  const r = await fetch(u);
-  if (!r.ok) throw new Error(`IODA ${r.status}`);
+  // Con reintentos: un tropiezo de red de un segundo no puede pintar la zona
+  // como «sin datos». Desde un celular con la red a medias —que es justo
+  // quien abre esto— el primer intento falla a menudo y el segundo pasa.
+  let ultimo;
+  let r;
+  for (let n = 0; n < INTENTOS_IODA; n++) {
+    try {
+      r = await fetch(u);
+      if (r.ok) break;
+      ultimo = new Error(`IODA ${r.status}`);
+      r = null;
+    } catch (e) {
+      ultimo = e;
+      r = null;
+    }
+    if (n < INTENTOS_IODA - 1) await dormir(ESPERA_REINTENTO_MS * (2 ** n));
+  }
+  if (!r) throw ultimo || new Error('IODA no respondió');
   const j = await r.json();
   let d = j.data || [];
   if (d.length && Array.isArray(d[0])) d = d[0];
@@ -216,6 +237,11 @@ async function pulsoVivoNavegador(horas = 3) {
   const conCorte = zonas.filter((z) => ['troncal_caido', 'ultima_milla_caida',
     'troncal_degradado', 'ultima_milla_degradada'].includes(z.clase));
 
+  // Medidas y sin medir van por separado. Ver la nota en `fuentes.pulso_vivo`:
+  // sumarlas producía el titular «las 8 zonas están como un día normal» encima
+  // de ocho tarjetas que decían «no hay datos».
+  const medidas = zonas.filter((z) => z.clase !== 'sin_medicion');
+
   return {
     fuente: 'IODA /signals/raw — consultado directo desde el navegador',
     consultado: new Date().toISOString(),
@@ -223,7 +249,9 @@ async function pulsoVivoNavegador(horas = 3) {
     comparado_contra: 'la misma ventana horaria de hace 7 días',
     sin_backend: true,
     resumen: {
-      zonas_medidas: zonas.length,
+      zonas_medidas: medidas.length,
+      zonas_sin_medir: zonas.length - medidas.length,
+      zonas_totales: zonas.length,
       con_degradacion: conCorte.length,
       firma_de_apagon: conCorte.filter((z) => z.clase.startsWith('ultima_milla')).length,
     },

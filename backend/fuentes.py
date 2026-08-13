@@ -89,6 +89,16 @@ TIEMPO_ESPERA = 45
 CACHE_SEG = 600          # 10 min: suficiente para no martillar, poco para servir rancio
 CACHE_PULSO_SEG = 120    # el pulso en vivo va más corto: IODA publica cada 5-10 min
 
+INTENTOS_HTTP = 3        # un tropiezo de red no puede vaciar el panel
+ESPERA_REINTENTO = 0.8   # segundos; se duplica en cada reintento
+TIEMPO_IODA = 12         # las series del pulso son chicas: si tardan más, algo pasa
+
+# Si IODA se cae del todo, se sirve la última medición buena hasta esta edad,
+# rotulada con su hora. Un dato de hace dos horas dice mucho más que un panel
+# en blanco: la red no cambia de estado cada minuto, y quien está coordinando
+# necesita saber qué se sabía, no que le apaguen la pantalla.
+CACHE_RANCIO_SEG = 6 * 3600
+
 # ── Departamentos: código IODA → nombre y centroide real ────────────────────
 # Los códigos salen de /v2/entities/query?entityType=region&relatedTo=country/CO
 DEPARTAMENTOS: dict[int, dict[str, Any]] = {
@@ -187,10 +197,26 @@ def _cache_guardar(clave: str, valor: Any) -> None:
 
 # ── HTTP ────────────────────────────────────────────────────────────────────
 
-def _get(url: str) -> Any:
+def _get(url: str, intentos: int = INTENTOS_HTTP, tiempo: int = 0) -> Any:
+    """GET con reintentos.
+
+    Un fallo aislado de red no puede vaciar el panel. Desde el contenedor de
+    Railway hacia IODA se ven cortes esporádicos (timeout, 502, TLS a medias)
+    que en el reintento siguiente pasan. Sin esto, un tropiezo de un segundo
+    pinta las ocho zonas como «no hay datos», que es la peor mentira posible:
+    parece que el país se apagó cuando lo que falló fue nuestra propia consulta.
+    """
     req = urllib.request.Request(url, headers={"User-Agent": "HOPE/0.2 (respuesta sismo Chocó)"})
-    with urllib.request.urlopen(req, timeout=TIEMPO_ESPERA) as r:
-        return json.loads(r.read().decode())
+    ultimo: Exception | None = None
+    for n in range(intentos):
+        try:
+            with urllib.request.urlopen(req, timeout=tiempo or TIEMPO_ESPERA) as r:
+                return json.loads(r.read().decode())
+        except Exception as e:               # noqa: BLE001 — se reintenta cualquier fallo
+            ultimo = e
+            if n < intentos - 1:
+                time.sleep(ESPERA_REINTENTO * (2 ** n))
+    raise ultimo if ultimo else RuntimeError(f"sin respuesta de {url}")
 
 
 def _post(url: str, cuerpo: dict) -> Any:
@@ -713,7 +739,10 @@ def _ioda_serie(tipo: str, codigo: Any, desde: int, hasta: int, ds: str) -> list
     """
     url = (f"{IODA}/signals/raw/{tipo}/{codigo}"
            f"?from={desde}&until={hasta}&datasource={ds}")
-    datos = _desanidar(_get(url))
+    # Espera corta a propósito: estas series son pequeñas y IODA las contesta en
+    # ~2 s. Con los 45 s generales, tres intentos por serie × cuatro series
+    # dejarían la página colgada minutos antes de admitir que la fuente cayó.
+    datos = _desanidar(_get(url, tiempo=TIEMPO_IODA))
     for serie in datos:
         return [v for v in (serie.get("values") or []) if isinstance(v, (int, float))]
     return []
@@ -754,12 +783,17 @@ def _pulso_entidad(tipo: str, codigo: Any, nombre: str, horas: int) -> dict:
     hasta = int(time.time())
     desde = hasta - horas * 3600
 
-    def par(ds: str) -> tuple[list[float], list[float]]:
-        return (_ioda_serie(tipo, codigo, desde, hasta, ds),
-                _ioda_serie(tipo, codigo, desde - SEMANA_S, hasta - SEMANA_S, ds))
-
-    acceso_hoy, acceso_base = par(PULSO_ACCESO)
-    troncal_hoy, troncal_base = par(PULSO_TRONCAL)
+    # Las cuatro series son independientes: van a la vez. En serie, un IODA
+    # lento multiplicaba por cuatro la espera de cada zona, y con reintentos
+    # eso se vuelve minutos de página colgada. Así el peor caso de una zona es
+    # el de una sola serie.
+    ventanas = [
+        (desde, hasta, PULSO_ACCESO), (desde - SEMANA_S, hasta - SEMANA_S, PULSO_ACCESO),
+        (desde, hasta, PULSO_TRONCAL), (desde - SEMANA_S, hasta - SEMANA_S, PULSO_TRONCAL),
+    ]
+    acceso_hoy, acceso_base, troncal_hoy, troncal_base = _en_paralelo(
+        [(lambda d=d, h=h, s=s: _ioda_serie(tipo, codigo, d, h, s)) for d, h, s in ventanas],
+        hilos=4)
 
     def delta(hoy: list[float], base: list[float]) -> Optional[float]:
         a, b = _media(hoy), _media(base)
@@ -915,6 +949,25 @@ def pulso_vivo(horas: int = 3) -> dict:
     zonas.sort(key=lambda z: (RANGO_CLASE.get(z["clase"], 9),
                               (z.get("acceso") or {}).get("delta_pct") or 0))
 
+    # Medida y no-medida son cosas distintas y no pueden sumarse. Contar una
+    # zona sin datos dentro de «zonas medidas» hacía que el panel dijera «las 8
+    # zonas están como un día normal» mientras las ocho tarjetas decían «no hay
+    # datos». Ese titular es peor que no tener panel.
+    medidas = [z for z in zonas if z["clase"] != "sin_medicion"]
+    sin_medir = [z for z in zonas if z["clase"] == "sin_medicion"]
+
+    # Si no se midió NADA, la consulta falló entera. Antes de dar la pantalla
+    # por vacía se busca la última medición buena, que se entrega rotulada.
+    if not medidas:
+        motivos = sorted({z.get("diagnostico", "") for z in sin_medir})
+        rancio = _cache_leer(f"{clave}:bueno", CACHE_RANCIO_SEG)
+        if rancio is not None:
+            envejecido = dict(rancio)
+            envejecido["rancio"] = True
+            envejecido["medido_en"] = rancio.get("consultado")
+            envejecido["fallo_fuente"] = " · ".join(m for m in motivos if m)
+            return envejecido
+
     con_corte = [z for z in zonas
                  if z["clase"] in ("troncal_caido", "ultima_milla_caida",
                                    "troncal_degradado", "ultima_milla_degradada")]
@@ -926,7 +979,9 @@ def pulso_vivo(horas: int = 3) -> dict:
         "ventana_horas": horas,
         "comparado_contra": "la misma ventana horaria de hace 7 días",
         "resumen": {
-            "zonas_medidas": len(zonas),
+            "zonas_medidas": len(medidas),
+            "zonas_sin_medir": len(sin_medir),
+            "zonas_totales": len(zonas),
             "con_degradacion": len(con_corte),
             "firma_de_apagon": len(por_energia),
         },
@@ -938,7 +993,17 @@ def pulso_vivo(horas: int = 3) -> dict:
         ),
         "zonas": zonas,
     }
-    _cache_guardar(clave, res)
+    # Un fallo NO se cachea. Guardar «no sabemos nada» durante dos minutos
+    # alarga el apagón de datos por nuestra cuenta: quien recarga buscando
+    # novedades recibe el mismo vacío sin que se haya vuelto a preguntar.
+    # Sin caché, el siguiente golpe de F5 reintenta de verdad.
+    #
+    # La copia «buena» tampoco se pisa con un fallo: es la red de seguridad
+    # para el próximo corte, y sobrescribirla sería tirar justo lo único que
+    # serviría entonces.
+    if medidas:
+        _cache_guardar(clave, res)
+        _cache_guardar(f"{clave}:bueno", res)
     return res
 
 

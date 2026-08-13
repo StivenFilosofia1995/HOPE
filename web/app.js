@@ -847,13 +847,47 @@ function pintarPulso(d) {
   const r = d.resumen;
   // El titular cambia según lo que haya. Cuando no hay degradación se dice
   // así de claro, en vez de dejar un panel vacío que se lee como "falla".
+  //
+  // Medido y no medido NO se suman. El titular se calcula sobre las zonas que
+  // de verdad tienen medición: si no se cuentan aparte, ocho tarjetas que
+  // dicen «no hay datos» quedan coronadas por un «las 8 zonas están como un
+  // día normal», que es exactamente lo contrario de lo que pasa.
+  const medidas  = d.zonas.filter((z) => z.clase !== 'sin_medicion');
+  const sinMedir = d.zonas.filter((z) => z.clase === 'sin_medicion');
   const hayAlgo = r.con_degradacion > 0;
   const ciegas = d.zonas.filter((z) => z.clase === 'muestra_chica').length;
+
+  // Caso feo y real: la fuente no respondió para ninguna zona. Aquí no se
+  // puede decir nada del país, solo de nosotros mismos, y hay que decirlo con
+  // el motivo técnico a la vista para que sea arreglable.
+  if (!medidas.length) {
+    const motivo = d.fallo_fuente || (sinMedir[0] && sinMedir[0].diagnostico) || '';
+    $('#pulso-resumen').innerHTML = `
+      <div class="pulso-titular sinmedir">
+        <b>No pudimos medir ninguna zona</b>
+        <span class="firma-ciega">Esto NO quiere decir que no haya internet: quiere
+          decir que la fuente no nos contestó. No se puede concluir nada de este
+          vacío — confirmar por radio o en terreno.</span>
+        ${motivo ? `<span class="motivo-fallo">Motivo técnico: ${escapar(motivo)}</span>` : ''}
+      </div>`;
+    return pintarFilasPulso(d);
+  }
+
   $('#pulso-resumen').innerHTML = `
     <div class="pulso-titular ${hayAlgo ? 'alerta' : 'calma'}">
       <b>${hayAlgo
-            ? `${r.con_degradacion} de ${r.zonas_medidas} zonas están peor que un día normal`
-            : `Las ${r.zonas_medidas} zonas están como un día normal`}</b>
+            ? `${r.con_degradacion} de ${medidas.length} zonas están peor que un día normal`
+            : `Las ${medidas.length} zonas medidas están como un día normal`}</b>
+      ${d.rancio
+        ? `<span class="firma-ciega">⏱ La fuente no responde ahora mismo. Esto es la
+             última medición buena, de ${fechaCorta(d.medido_en || d.consultado)}.
+             No es el estado de este minuto.</span>`
+        : ''}
+      ${sinMedir.length > 0
+        ? `<span class="firma-ciega">⚠ ${sinMedir.length} zona${sinMedir.length === 1 ? '' : 's'}
+             sin medición: la fuente no contestó por ${sinMedir.length === 1 ? 'ella' : 'ellas'}.
+             No están incluidas en la cuenta de arriba.</span>`
+        : ''}
       ${r.firma_de_apagon > 0
         ? `<span class="firma-energia">🔌 En ${r.firma_de_apagon} de ellas el problema
              parece ser falta de luz, no falta de internet</span>`
@@ -864,6 +898,12 @@ function pintarPulso(d) {
         : ''}
     </div>`;
 
+  pintarFilasPulso(d);
+}
+
+/** Las tarjetas y el pie. Va aparte del titular porque cuando la fuente falla
+ *  entera el titular es otro, pero las tarjetas se pintan igual. */
+function pintarFilasPulso(d) {
   const cont = $('#pulso-zonas');
   cont.innerHTML = d.zonas.map(filaPulso).join('');
 
