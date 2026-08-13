@@ -65,6 +65,12 @@ body.panel-plegado .panel-head h1 { opacity: 0; pointer-events: none; }
 }
 #btn-plegar:hover { color: var(--texto); }
 body.panel-plegado #btn-plegar { transform: rotate(180deg); }
+#btn-ayuda {
+  background: transparent; color: var(--texto-2); border: 1px solid var(--linea);
+  border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-weight: 700;
+  margin-left: auto;
+}
+#btn-ayuda:hover { color: var(--texto); border-color: var(--acento); }
 
 .panel-body { overflow-y: auto; padding: 0 16px 24px; flex: 1 1 auto; transition: opacity .18s; }
 
@@ -308,6 +314,21 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
 .modal-caja h2 { margin: 0 0 4px; font-size: 16px; }
 .modal-caja p { font-size: 13px; line-height: 1.55; color: var(--texto-2); }
 .modal-caja p strong, .modal-caja li strong { color: var(--texto); }
+.sobrelinea { color: var(--acento) !important; font-size: 10px !important; font-weight: 700; letter-spacing: 1px; margin: 0 0 6px !important; }
+.bienvenida { width: min(440px, 100%); }
+.pasos-bienvenida { display: grid; gap: 8px; margin: 18px 0 10px; }
+.opcion-bienvenida {
+  color: var(--texto); font: inherit; display: grid; grid-template-columns: auto 1fr; gap: 12px;
+  align-items: center; text-align: left; padding: 12px; border-radius: 6px; cursor: pointer;
+}
+.opcion-bienvenida .ico { font-size: 22px; }
+.opcion-bienvenida b, .opcion-bienvenida small { display: block; }
+.opcion-bienvenida small { color: var(--texto-2); font-size: 11px; margin-top: 2px; line-height: 1.4; }
+.opcion-bienvenida.necesita { border: 1px solid rgba(255, 59, 48, .6); background: rgba(255, 59, 48, .1); }
+.opcion-bienvenida.aporta { border: 1px solid rgba(52, 199, 89, .6); background: rgba(52, 199, 89, .1); }
+.opcion-bienvenida.necesita:hover { background: rgba(255, 59, 48, .22); }
+.opcion-bienvenida.aporta:hover { background: rgba(52, 199, 89, .22); }
+.bienvenida-acciones { margin-top: 14px; }
 #form-reporte label { margin-top: 12px; }
 .coords { font-size: 11px; color: var(--texto-2); font-variant-numeric: tabular-nums; margin: 0 0 4px; }
 .pii { color: var(--alta); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }

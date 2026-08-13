@@ -577,6 +577,12 @@ async function guardarContacto(ref, f) {
 function conectarUIZonas() {
   document.querySelector('#btn-zona').onclick = () => activarUbicar('zona');
   document.querySelector('#btn-aporte').onclick = () => activarUbicar('aporte');
+  document.querySelectorAll('[data-iniciar]').forEach((b) => {
+    b.onclick = () => {
+      document.querySelector('#modal-bienvenida').hidden = true;
+      activarUbicar(b.dataset.iniciar);
+    };
+  });
   document.querySelector('#form-zona').onsubmit = guardarZona;
   document.querySelector('#form-aporte').onsubmit = guardarAporte;
   document.querySelector('#f-zona-tipo').onchange = pintarZonas;
@@ -607,5 +613,16 @@ function conectarUIZonas() {
       const m = document.querySelector(s);
       if (m && !m.hidden) m.hidden = true;
     });
+  });
+
+  const bienvenida = document.querySelector('#modal-bienvenida');
+  const yaVista = localStorage.getItem('hope.bienvenida.v1');
+  if (bienvenida && !yaVista) bienvenida.hidden = false;
+  document.querySelector('#btn-ayuda').onclick = () => { bienvenida.hidden = false; };
+  bienvenida.addEventListener('click', (e) => {
+    if (e.target === bienvenida) bienvenida.hidden = true;
+  });
+  bienvenida.querySelectorAll('[data-cerrar], [data-iniciar]').forEach((b) => {
+    b.addEventListener('click', () => localStorage.setItem('hope.bienvenida.v1', '1'));
   });
 }

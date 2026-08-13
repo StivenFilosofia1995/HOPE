@@ -18,6 +18,7 @@
     <h1>HOPE <span class="sub">mapa abierto</span></h1>
     <span id="badge-vivo" class="badge">conectando…</span>
     <span id="ultima-actualizacion" class="hint" style="margin:0"></span>
+    <button id="btn-ayuda" title="Cómo funciona HOPE" aria-label="Cómo funciona HOPE">?</button>
     <button id="btn-plegar" title="Plegar panel">‹</button>
   </header>
 
@@ -161,6 +162,32 @@
 
   </div>
 </aside>
+
+<!-- ═══════════════ Bienvenida para el primer uso ═══════════════ -->
+<div id="modal-bienvenida" class="modal" hidden>
+  <div class="modal-caja bienvenida" role="dialog" aria-modal="true" aria-labelledby="bienvenida-titulo">
+    <p class="sobrelinea">MAPA DE APOYO COMUNITARIO</p>
+    <h2 id="bienvenida-titulo">¿Cómo puedes usar HOPE?</h2>
+    <p>Este mapa ayuda a conectar necesidades y recursos durante una emergencia.
+      <strong>No envía ambulancias ni equipos de rescate.</strong> Si hay peligro inmediato, llama al 123.</p>
+
+    <div class="pasos-bienvenida">
+      <button type="button" class="opcion-bienvenida necesita" data-iniciar="zona">
+        <span class="ico">📍</span>
+        <span><b>Veo una necesidad</b><small>Marca en el mapa dónde falta ayuda o qué problema hay.</small></span>
+      </button>
+      <button type="button" class="opcion-bienvenida aporta" data-iniciar="aporte">
+        <span class="ico">🤝</span>
+        <span><b>Tengo algo para aportar</b><small>Marca dónde está el recurso que puedes ofrecer.</small></span>
+      </button>
+    </div>
+
+    <p class="hint">Al elegir una opción, el siguiente paso será tocar el lugar exacto en el mapa.</p>
+    <div class="modal-acciones bienvenida-acciones">
+      <button type="button" class="btn btn-sec" data-cerrar="#modal-bienvenida">Solo quiero mirar el mapa</button>
+    </div>
+  </div>
+</div>
 
 <!-- ═══════════════ Formulario: reportar zona ═══════════════ -->
 <div id="modal-zona" class="modal" hidden>
