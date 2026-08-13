@@ -36,6 +36,10 @@ do $$ begin
   );
 exception when duplicate_object then null; end $$;
 
+-- Migración: tipo agregado después del lanzamiento inicial. ADD VALUE IF NOT
+-- EXISTS es seguro de repetir y no rompe instalaciones que ya tienen el enum.
+alter type zona_tipo add value if not exists 'punto_donacion'; -- acopio físico de donaciones, verificado por un humano
+
 do $$ begin
   create type zona_estado as enum (
     'nuevo',        -- reportado, sin confirmar

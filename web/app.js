@@ -906,6 +906,7 @@ function popupReporte(r) {
     </dl>
     ${r.descripcion ? `<div style="margin-top:8px">${escapar(r.descripcion)}</div>` : ''}
     ${r.verificado ? '' : '<span class="no-verificado">⚠ Sin verificar</span>'}
+    ${enlaceWaze(r.lat, r.lon)}
     <button class="btn btn-sec" id="editar-${cssId(r.id)}">Editar</button>
   `;
 }

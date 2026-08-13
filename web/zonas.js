@@ -22,6 +22,7 @@ const ZONA_TIPOS = {
   salud:           { etiqueta: 'Atención médica',        color: '#ff6b6b', icono: '🔴' },
   agua_alimentos:  { etiqueta: 'Agua y alimentos',       color: '#5ac8fa', icono: '🔵' },
   via_bloqueada:   { etiqueta: 'Vía bloqueada',          color: '#ffd60a', icono: '🟡' },
+  punto_donacion:  { etiqueta: 'Punto de donación',      color: '#2dd4bf', icono: '🎁' },
   otro:            { etiqueta: 'Otro',                   color: '#98a2b3', icono: '⚪' },
 };
 
@@ -260,6 +261,7 @@ function popupZona(z) {
           (APORTE_TIPOS[a.tipo] || APORTE_TIPOS.otro).icono).join(' ')}</div>`
       : ''}
     ${enlaceContacto(z.contacto_publico)}
+    ${enlaceWaze(z.lat, z.lon)}
     <button class="btn btn-primario" id="sumar-${z.id}">Aportar a esta zona</button>
   `;
 }
@@ -288,6 +290,7 @@ function pintarAportes() {
       </dl>
       ${a.descripcion ? `<div style="margin-top:8px">${escapar(a.descripcion)}</div>` : ''}
       ${enlaceContacto(a.contacto_publico)}
+      ${enlaceWaze(a.lat, a.lon)}
     `, { maxWidth: 300 }).addTo(S.capas.aportes);
     n++;
   });
@@ -315,6 +318,15 @@ function enlaceContacto(valor) {
   return `<div class="hint">Contacto: <strong>${escapar(v)}</strong></div>`;
 }
 
+/** Abre Waze ya centrado y listo para navegar a ese punto. Es el enlace
+ *  universal oficial de Waze (waze.com/ul): sin API key, sin app instalada
+ *  cae solo a la versión web. Mismo botón para zonas, aportes y apuntes. */
+function enlaceWaze(lat, lon) {
+  if (lat == null || lon == null) return '';
+  return `<a class="btn btn-sec" href="https://waze.com/ul?ll=${lat},${lon}&navigate=yes" ` +
+         'target="_blank" rel="noopener">🚗 Ir con Waze</a>';
+}
+
 /** Resumen en lenguaje llano: es lo que se ve de un vistazo y lo que sirve
  *  para una captura de pantalla en Instagram. */
 function pintarResumenPublico() {
@@ -330,7 +342,7 @@ function pintarResumenPublico() {
   });
 
   const orden = ['buscar_personas', 'sin_energia', 'sin_internet', 'infraestructura',
-                 'salud', 'agua_alimentos', 'via_bloqueada', 'albergue', 'otro'];
+                 'salud', 'agua_alimentos', 'via_bloqueada', 'albergue', 'punto_donacion', 'otro'];
   const filas = orden.filter((k) => porTipo[k]).map((k) => {
     const t = ZONA_TIPOS[k];
     const d = porTipo[k];
