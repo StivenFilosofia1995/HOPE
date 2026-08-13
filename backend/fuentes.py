@@ -29,6 +29,13 @@ Fuentes (todas públicas, sin llave de API, verificadas el 2026-08-12):
     Precipitación en los departamentos con daño reportado: lluvia intensa
     complica el acceso vial a zonas ya golpeadas por el sismo.
 
+  RIPE Atlas — red de sondas voluntarias con coordenadas reales.
+    https://atlas.ripe.net/api/v2/probes/
+    A diferencia de IODA (que agrega por departamento), cada sonda es UN PUNTO
+    FÍSICO verificable con su propio estado de conexión. Son decenas de puntos
+    en todo el país, no un censo: ausencia de sonda no es ausencia de problema,
+    solo ausencia de medición ahí.
+
 Advertencia de interpretación, importante:
   Una señal DÉBIL de corte no significa "esa zona está bien". Puede significar
   que allí casi no hay infraestructura que medir. Chocó es el caso exacto: es el
@@ -517,6 +524,67 @@ def clima_zonas_afectadas() -> dict:
         "nota": "Lluvia intensa dificulta el acceso vial a zonas ya golpeadas por "
                 "el sismo. No es alerta oficial de IDEAM: es pronóstico de modelo abierto.",
         "zonas": zonas,
+    }
+    _cache_guardar(clave, res)
+    return res
+
+
+# ── RIPE Atlas: sondas individuales, punto exacto (no por departamento) ─────
+
+RIPE_ATLAS = "https://atlas.ripe.net/api/v2/probes"
+SISMO_TS = datetime(2026, 8, 10, 12, 34, 28, tzinfo=timezone.utc).timestamp()
+
+
+def ripe_atlas_colombia() -> dict:
+    """Sondas RIPE Atlas en Colombia con estado de conexión reciente.
+
+    Se excluyen sondas 'Abandoned' / 'Written Off' / 'Never Connected': son
+    hardware que dejó de reportar mucho antes del sismo, no una señal de nada.
+    Solo quedan las que están conectadas AHORA (prueba de que ahí sí hay
+    internet) o que se desconectaron DESPUÉS del sismo (posible corte real).
+    """
+    clave = "ripe_atlas_co"
+    if (c := _cache_leer(clave)) is not None:
+        return c
+
+    datos = _get(f"{RIPE_ATLAS}/?country_code=CO&format=json&page_size=500")
+
+    sondas = []
+    for p in datos.get("results", []):
+        coords = (p.get("geometry") or {}).get("coordinates")
+        if not coords:
+            continue
+        lon, lat = coords[0], coords[1]
+        estado = (p.get("status") or {}).get("name", "")
+        desde = p.get("status_since")
+
+        if estado == "Connected":
+            clase = "activa"
+        elif estado == "Disconnected" and desde and desde >= SISMO_TS:
+            clase = "caida_reciente"
+        else:
+            continue  # hardware viejo abandonado: no aporta señal del sismo
+
+        sondas.append({
+            "id": p.get("id"),
+            "lat": lat, "lon": lon,
+            "clase": clase,
+            "estado": estado,
+            "desde_iso": (datetime.fromtimestamp(desde, timezone.utc).isoformat()
+                         if desde else None),
+            "descripcion": p.get("description") or "",
+            "asn": p.get("asn_v4") or p.get("asn_v6"),
+            "es_ancla": bool(p.get("is_anchor")),
+        })
+
+    res = {
+        "fuente": "RIPE Atlas (sondas individuales)",
+        "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "nota": "Cada sonda es un punto real, no un promedio de zona. Son pocas "
+                "decenas de puntos en todo el país: ausencia de sonda no es "
+                "ausencia de problema, solo ausencia de medición ahí.",
+        "total": len(sondas),
+        "sondas": sondas,
     }
     _cache_guardar(clave, res)
     return res

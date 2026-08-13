@@ -137,6 +137,7 @@ async function iniciar() {
   cargarCortes();          // depende de Almacen: sabe si hay backend o no
   cargarSismosRecientes(); // idem
   cargarClima();           // idem
+  cargarSondasRipe();      // idem
 
   conectarUIZonas();
   iniciarZonas();          // Supabase: zonas y aportes en tiempo real
@@ -158,6 +159,7 @@ function iniciarAutoRefresco() {
       cargarCortes(),
       cargarSismosRecientes(),
       cargarClima(),
+      cargarSondasRipe(),
     ]);
     marcarActualizado();
   }, RITMO_MS);
@@ -213,6 +215,7 @@ function crearMapa() {
     aportes:    L.layerGroup(),
     reportes:   L.layerGroup(),
     sismos:     L.layerGroup(),
+    sondas:     L.layerGroup(),
   };
   // El orden de adición define el apilamiento: lo que la gente reporta va
   // arriba de todo, porque es lo que se viene a mirar.
@@ -476,6 +479,45 @@ function pintarPanelSismos(d) {
     `${d.fuente} · consultado ${fechaCorta(d.consultado)}.`;
 }
 
+// ── Capa: sondas RIPE Atlas — puntos individuales, no promedios ────────────────
+//
+// Cada sonda es un dispositivo real en una casa u oficina. Verde = conectada
+// ahora mismo (prueba de que ahí SÍ hay internet). Roja = se desconectó
+// DESPUÉS del sismo (posible corte real, no ruido viejo). Son decenas de
+// puntos, no un censo: que falte una sonda no significa que no haya problema.
+
+async function cargarSondasRipe() {
+  S.capas.sondas.clearLayers();
+  if (Almacen.modo !== 'api') {
+    actualizarCuenta('sondas', '—');
+    return;
+  }
+  try {
+    const d = await cargarJSON(`${Almacen.base}/cortes/sondas`);
+    d.sondas.forEach((s) => {
+      const activa = s.clase === 'activa';
+      const color = activa ? '#30d158' : '#ff3b30';
+      L.circleMarker([s.lat, s.lon], {
+        radius: s.es_ancla ? 7 : 5,
+        color, weight: 1.5,
+        fillColor: color, fillOpacity: 0.75,
+      }).bindPopup(`
+        <h3>${activa ? '🟢 Sonda conectada' : '🔴 Sonda desconectada'}</h3>
+        <div>${escapar(s.descripcion || 'Sin descripción')}</div>
+        <dl>
+          <dt>Estado</dt><dd>${escapar(s.estado)}</dd>
+          <dt>Desde</dt><dd>${fechaLocal(s.desde_iso)}</dd>
+          ${s.asn ? `<dt>ASN</dt><dd>AS${s.asn}</dd>` : ''}
+        </dl>
+        <div class="hint">Punto real (sonda RIPE Atlas), no un promedio de zona.</div>
+      `).addTo(S.capas.sondas);
+    });
+    actualizarCuenta('sondas', d.total);
+  } catch (e) {
+    actualizarCuenta('sondas', '—');
+  }
+}
+
 // ── Panel: clima en zonas afectadas (Open-Meteo) ────────────────────────────
 //
 // No es una capa geoespacial nueva en el mapa: es contexto operativo (lluvia
@@ -641,6 +683,9 @@ function popupCorte(z) {
   return `
     <h3>${escapar(z.nombre)}</h3>
     <div style="color:${c.color};font-weight:600">${escapar(c.etiqueta)}</div>
+    <div class="hint">Promedio de TODO el departamento — no indica el
+      municipio o barrio exacto. Para puntos concretos, ver capa «Sondas de
+      red (RIPE Atlas)».</div>
     <dl>
       <dt>Score IODA</dt><dd>${z.score ? nf.format(Math.round(z.score)) : '0'}</dd>
       <dt>Eventos de corte</dt><dd>${z.eventos}</dd>
@@ -1207,6 +1252,7 @@ function construirControlCapas() {
     ['epicentro',  'Epicentro',                '#ff3b30'],
     ['replicas',   'Réplicas (USGS)',          '#ffd60a'],
     ['sismos',     'Sismos recientes (USGS)',  '#ff6b6b'],
+    ['sondas',     'Sondas de red (RIPE Atlas)', '#30d158'],
     ['intensidad', 'Intensidad ShakeMap',      '#ff9100'],
     ['ciudades',   'Ciudades de referencia',   '#5ac8fa'],
     ['anillos',    'Anillos de distancia',     '#ff3b30'],

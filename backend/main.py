@@ -435,6 +435,16 @@ def cortes_prioridad(horas: int = Query(96, ge=1, le=720)) -> dict:
         raise HTTPException(502, f"Fuentes no disponibles: {type(e).__name__}: {e}")
 
 
+@app.get("/api/cortes/sondas", tags=["cortes"])
+def cortes_sondas() -> dict:
+    """Sondas RIPE Atlas: puntos individuales reales con coordenadas exactas,
+    no un promedio por departamento. Complementa a IODA con más resolución."""
+    try:
+        return fuentes.ripe_atlas_colombia()
+    except Exception as e:
+        raise HTTPException(502, f"RIPE Atlas no respondió: {type(e).__name__}: {e}")
+
+
 @app.get("/api/sismos/recientes", tags=["sismos"])
 def sismos_recientes(
     dias: int = Query(7, ge=1, le=30),
