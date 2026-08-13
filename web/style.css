@@ -415,6 +415,12 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
 .pulso-titular.sinmedir { border-color: #c77dff; background: rgba(199, 125, 255, .08); }
 .pulso-titular b { display: block; color: var(--texto); font-weight: 600; }
 
+/* Cuenta de sondas en la fila del operador, donde iría el porcentaje. Ocupa el
+   sitio del «s/d»: mejor un número real de aparatos que un guion. */
+.op-sondas { font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
+.op-sondas.viva  { color: var(--baja); }
+.op-sondas.caida { color: var(--critica); }
+
 /* Evidencia de sondas dentro de una tarjeta sin medición. El borde de color
    la separa del texto de la clase, que ahí dice "no sabemos": esto sí se sabe. */
 .sondas-zona {

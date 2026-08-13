@@ -710,6 +710,10 @@ async function cargarSondasRipe() {
    Basta con que UNA zona esté sin medición: es justo esa tarjeta la que tiene
    un hueco que las sondas pueden llenar. */
 function repintarSiFaltanMediciones() {
+  const cont = $('#pulso-operadores');
+  if (cont && S.operadores && S.operadores.operadores.some((o) => o.clase === 'sin_medicion')) {
+    pintarOperadores(S.operadores, cont);
+  }
   if (!S.pulso || !S.pulso.zonas) return;
   if (!S.pulso.zonas.some((z) => z.clase === 'sin_medicion')) return;
   pintarPulso(S.pulso);
@@ -981,6 +985,26 @@ function pintarFilasPulso(d) {
         'este navegador. Funciona, pero no hay capa de energía de XM — esa sí ' +
         'necesita el backend de HOPE.'
       : '');
+}
+
+/* Lo mismo que `sondasDeZona`, pero por operador: las sondas declaran el ASN
+   por el que salen a internet. «3 sondas de este operador respondiendo» no es
+   la curva que da IODA, pero responde la pregunta de la sección —¿es la zona o
+   es el proveedor?— con aparatos reales en vez de con un guion. */
+function sondasDeOperador(asn) {
+  const lista = S.sondas && S.sondas.sondas;
+  if (!lista) return '';
+  const suyas = lista.filter((s) => s.asn === asn);
+  if (!suyas.length) return '';
+  const vivas = suyas.filter((s) => s.clase === 'activa').length;
+  const caidas = suyas.length - vivas;
+  if (!vivas && caidas) {
+    return `<span class="op-sondas caida" title="${caidas} sonda(s) de este operador se ` +
+           `desconectaron tras el sismo y no han vuelto">${caidas}🔴</span>`;
+  }
+  return `<span class="op-sondas viva" title="${vivas} sonda(s) física(s) de este operador ` +
+         `responden ahora mismo${caidas ? `; ${caidas} caída(s) desde el sismo` : ''}">${vivas}🟢` +
+         `${caidas ? ` ${caidas}🔴` : ''}</span>`;
 }
 
 /* Una zona sin medición de IODA no tiene por qué quedarse en blanco: las
@@ -1577,19 +1601,28 @@ async function cargarOperadores() {
     const d = Almacen.modo === 'api'
       ? await cargarJSON(`${Almacen.base}/cortes/operadores?horas=${horas}`)
       : await pulsoOperadoresNavegador(horas);
-    cont.innerHTML = d.operadores.map((o) => {
+    S.operadores = d;
+    pintarOperadores(d, cont);
+  } catch (e) {
+    cont.innerHTML = `<p class="hint err">No se pudo leer: ${escapar(e.message)}</p>`;
+  }
+}
+
+function pintarOperadores(d, cont) {
+  cont.innerHTML = d.operadores.map((o) => {
       const c = CLASES_PULSO[o.clase] || CLASES_PULSO.sin_medicion;
       const a = o.acceso || {};
+      // Sin medición de IODA, la fila no tiene por qué quedarse en «s/d»: las
+      // sondas RIPE declaran su ASN, así que se puede decir cuántos aparatos
+      // de ESE operador están hablando ahora mismo.
+      const s = o.clase === 'sin_medicion' ? sondasDeOperador(o.codigo) : '';
       return `<div class="op-fila" title="${escapar(o.diagnostico || '')}">
         <span class="op-punto" style="background:${c.color}"></span>
         <span class="op-nombre">${escapar(o.nombre)}</span>
         ${chispa(a.serie, c.color)}
-        <span class="delta ${claseDelta(a.delta_pct)}">${fmtDelta(a.delta_pct)}</span>
+        <span class="delta ${claseDelta(a.delta_pct)}">${s || fmtDelta(a.delta_pct)}</span>
       </div>`;
     }).join('') + `<p class="hint">${escapar(d.nota)}</p>`;
-  } catch (e) {
-    cont.innerHTML = `<p class="hint err">No se pudo leer: ${escapar(e.message)}</p>`;
-  }
 }
 
 // ── Capa: luces nocturnas VIIRS (NASA GIBS) ─────────────────────────────────
