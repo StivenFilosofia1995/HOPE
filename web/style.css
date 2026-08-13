@@ -357,5 +357,9 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
   #panel { max-height: 55vh; bottom: 0; top: auto; border-right: 0; border-top: 1px solid var(--linea); }
   body.panel-plegado #panel { transform: translateY(calc(100% - 48px)); }
   body.panel-plegado #btn-plegar { transform: rotate(90deg); }
-  #btn-plegar { transform: rotate(-90deg); }
+  /* Con el dedo se falla más que con mouse: objetivo de toque más grande
+     que el de escritorio (24px), acercándolo al mínimo recomendado (~44px). */
+  #btn-plegar { transform: rotate(-90deg); width: 40px; height: 40px; }
+  .modal-acciones .btn { min-height: 44px; }
+  .capa { padding: 10px 0; }
 }

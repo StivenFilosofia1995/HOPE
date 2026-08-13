@@ -2,7 +2,8 @@
   "_meta": {
     "descripcion": "Ciudades y municipios de referencia para el mapa. Las coordenadas son de cabecera municipal y son estables. El campo 'danos_prensa' NO es información verificada: proviene de prensa de las primeras horas y sirve solo para orientar la mirada, no para tomar decisiones operativas.",
     "advertencia_cifras": "No se incluyen conteos de víctimas. Cambian por hora y cualquier cifra que se cablee en un archivo queda desactualizada y desinforma. Las cifras oficiales las publica la UNGRD.",
-    "consultado": "2026-08-12"
+    "consultado": "2026-08-12",
+    "cobertura_verificada": "Contrastado el 2026-08-12 contra el listado oficial 'onepager_cities' del producto PAGER de USGS (las ciudades que el propio USGS destaca en su mapa de exposición): agregadas Dosquebradas, Palmira y Zarzal, que faltaban."
   },
   "ciudades": [
     {
@@ -43,6 +44,16 @@
       "poblacion_aprox": 480000,
       "relevancia": "alta",
       "danos_prensa": "Daños estructurales reportados.",
+      "verificado": false
+    },
+    {
+      "nombre": "Dosquebradas",
+      "departamento": "Risaralda",
+      "lat": 4.8333,
+      "lon": -75.6833,
+      "poblacion_aprox": 179301,
+      "relevancia": "alta",
+      "danos_prensa": "Sin reporte consolidado. Conurbada con Pereira; según el listado oficial de exposición del USGS (PAGER) tiene MMI 7.9, de las intensidades más altas medidas junto con la capital.",
       "verificado": false
     },
     {
@@ -93,6 +104,26 @@
       "poblacion_aprox": 220000,
       "relevancia": "media",
       "danos_prensa": "Sin reporte consolidado.",
+      "verificado": false
+    },
+    {
+      "nombre": "Palmira",
+      "departamento": "Valle del Cauca",
+      "lat": 3.5833,
+      "lon": -76.25,
+      "poblacion_aprox": 349294,
+      "relevancia": "media",
+      "danos_prensa": "Sin reporte consolidado. Aparece en el listado oficial de exposición del USGS (PAGER).",
+      "verificado": false
+    },
+    {
+      "nombre": "Zarzal",
+      "departamento": "Valle del Cauca",
+      "lat": 4.3983,
+      "lon": -76.0772,
+      "poblacion_aprox": 312599,
+      "relevancia": "alta",
+      "danos_prensa": "Sin reporte consolidado. Aparece en el listado oficial de exposición del USGS (PAGER) con MMI 7.1 — cifra de población tal como la reporta esa fuente, sin verificar contra censo.",
       "verificado": false
     },
     {
