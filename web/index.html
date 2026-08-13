@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HOPE — Zonas que necesitan ayuda · Sismo M7.4 Chocó</title>
+  <meta name="description" content="Mapa abierto de zonas sin energía, sin internet y con personas por buscar tras el sismo del 10 de agosto de 2026. Reporta o aporta." />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="mapa"></div>
+
+<aside id="panel">
+  <header class="panel-head">
+    <h1>HOPE <span class="sub">mapa abierto</span></h1>
+    <span id="badge-vivo" class="badge">conectando…</span>
+    <button id="btn-plegar" title="Plegar panel">‹</button>
+  </header>
+
+  <div class="panel-body">
+
+    <!-- ═══ Aviso de emergencia. Primero que todo, siempre. ═══ -->
+    <div class="aviso emergencia">
+      <strong>Esto NO es una línea de emergencia.</strong>
+      Si hay vidas en riesgo ahora, llama al <strong>123</strong>.
+      Este mapa es un apoyo de datos: nadie es despachado automáticamente desde aquí.
+      <a href="#" id="link-entrega">¿A quién llegan estos datos? →</a>
+    </div>
+
+    <!-- ═══ Acción principal ═══ -->
+    <section class="bloque acciones-principales">
+      <button id="btn-zona" class="btn btn-grande btn-necesita">
+        <span class="ico">📍</span>
+        <span><b>Reportar una zona</b><small>Aquí falta luz, internet o hay que buscar gente</small></span>
+      </button>
+      <button id="btn-aporte" class="btn btn-grande btn-aporta">
+        <span class="ico">🤝</span>
+        <span><b>Quiero aportar</b><small>Tengo Starlink, generador, panel solar…</small></span>
+      </button>
+      <p class="hint" id="hint-ubicar" hidden></p>
+    </section>
+
+    <!-- ═══ Resumen: lo que se ve de un vistazo ═══ -->
+    <section class="bloque">
+      <div class="bloque-head">
+        <h2>Qué se necesita ahora</h2>
+        <select id="f-zona-tipo" class="mini"><option value="">todo</option></select>
+      </div>
+      <div id="resumen-publico" class="resumen"></div>
+      <p class="hint" id="resumen-nota"></p>
+      <ul id="lista-zonas" class="lista"></ul>
+    </section>
+
+    <!-- ═══ Aportes ═══ -->
+    <section class="bloque">
+      <h2>Recursos ofrecidos</h2>
+      <div id="lista-aportes" class="chips"></div>
+    </section>
+
+    <!-- ═══ Cortes medidos ═══ -->
+    <section class="bloque">
+      <div class="bloque-head">
+        <h2>Cortes medidos</h2>
+        <select id="f-ventana" class="mini">
+          <option value="96">96 h</option>
+          <option value="168">7 días</option>
+          <option value="48">48 h</option>
+          <option value="720">30 días</option>
+        </select>
+      </div>
+      <p class="hint">Medido por <strong>IODA</strong> (alcanzabilidad de red) y
+        <strong>XM</strong> (energía no entregada). Dos sistemas independientes.
+        Esto no lo reporta nadie: se mide.</p>
+      <div id="prioridad" class="prioridad"></div>
+      <div id="energia-resumen" class="energia"></div>
+      <p class="hint" id="cortes-nota"></p>
+    </section>
+
+    <!-- ═══ Capas ═══ -->
+    <section class="bloque">
+      <h2>Capas del mapa</h2>
+      <div id="capas"></div>
+      <div id="estado-carga" class="estado"></div>
+    </section>
+
+    <!-- ═══ Contexto del sismo ═══ -->
+    <details class="bloque plegable">
+      <summary><h2>El sismo</h2></summary>
+      <dl id="ficha-evento" class="ficha"></dl>
+      <p class="fuente" id="fuente-evento"></p>
+    </details>
+
+    <!-- ═══ Herramientas de coordinación (secundario) ═══ -->
+    <details class="bloque plegable">
+      <summary><h2>Coordinación <span id="conteo-reportes" class="pill">0</span></h2></summary>
+
+      <p class="hint">Capa privada de trabajo, separada de las zonas públicas.
+        Vive en este equipo o en el backend local, no en la base compartida.
+        <span id="badge-origen" class="badge">—</span></p>
+
+      <button id="btn-nuevo" class="btn btn-sec" style="width:100%">
+        <span class="dot"></span> Agregar apunte interno
+      </button>
+      <p class="hint" id="hint-nuevo" hidden>Clic en el mapa. Esc para cancelar.</p>
+
+      <div class="filtros">
+        <label>Tipo <select id="f-tipo"><option value="">todos</option></select></label>
+        <label>Prioridad <select id="f-prioridad"><option value="">todas</option></select></label>
+        <label>Estado <select id="f-estado"><option value="">todos</option></select></label>
+      </div>
+
+      <ul id="lista-reportes" class="lista"></ul>
+
+      <div class="acciones">
+        <button id="btn-exportar-geojson" class="btn btn-sec">Exportar GeoJSON</button>
+        <button id="btn-exportar-csv" class="btn btn-sec">Exportar CSV</button>
+        <label class="btn btn-sec" for="input-importar">Importar GeoJSON</label>
+        <input type="file" id="input-importar" accept=".geojson,.json" hidden />
+      </div>
+      <label class="check"><input type="checkbox" id="chk-contacto" /> Incluir contacto al exportar</label>
+    </details>
+
+    <details class="bloque plegable">
+      <summary><h2>Leyenda</h2></summary>
+      <div id="leyenda"></div>
+    </details>
+
+  </div>
+</aside>
+
+<!-- ═══════════════ Formulario: reportar zona ═══════════════ -->
+<div id="modal-zona" class="modal" hidden>
+  <form id="form-zona" class="modal-caja">
+    <h2>Reportar una zona</h2>
+    <p class="coords" id="zona-coords"></p>
+
+    <label>¿Qué pasa aquí?
+      <select name="tipo" id="zona-tipo" required></select>
+    </label>
+
+    <label>Título corto
+      <input name="titulo" type="text" required minlength="3" maxlength="120"
+             placeholder="Ej.: Barrio sin luz desde el lunes" />
+    </label>
+
+    <label>¿Qué urgencia tiene?
+      <select name="urgencia" required>
+        <option value="1">Crítica — hay vidas en riesgo ahora</option>
+        <option value="2" selected>Alta</option>
+        <option value="3">Media</option>
+        <option value="4">Baja / informativo</option>
+      </select>
+    </label>
+
+    <div class="dos-col">
+      <label>Municipio
+        <input name="municipio" type="text" maxlength="120" placeholder="Cali" />
+      </label>
+      <label>Departamento
+        <input name="departamento" type="text" maxlength="80" placeholder="Valle del Cauca" />
+      </label>
+    </div>
+
+    <div class="dos-col">
+      <label>Personas afectadas (aprox.)
+        <input name="personas" type="number" min="0" max="100000" placeholder="0" />
+      </label>
+      <label>Radio que abarca (metros)
+        <input name="radio_m" type="number" min="50" max="50000" step="50" value="500" />
+      </label>
+    </div>
+
+    <label>Cuéntanos más
+      <textarea name="descripcion" rows="3" maxlength="1000"
+        placeholder="Desde cuándo, cuánta gente, cómo se llega, qué se necesita exactamente."></textarea>
+    </label>
+
+    <fieldset class="privado">
+      <legend>Tu contacto <span class="pii">privado</span></legend>
+      <p class="hint">Se guarda en una tabla aparte que <strong>nadie puede leer
+        desde el mapa</strong>, ni siquiera con la llave pública. Solo sirve para
+        que un organismo de socorro pueda confirmar contigo. Es opcional.</p>
+      <div class="dos-col">
+        <label>Nombre <input name="contacto_nombre" type="text" maxlength="120" /></label>
+        <label>Teléfono <input name="contacto_telefono" type="text" maxlength="40" /></label>
+      </div>
+    </fieldset>
+
+    <p class="hint">Se publicará como <strong>sin verificar</strong>. Es lo correcto:
+      un reporte no confirmado que se trata como hecho desvía equipos de rescate.</p>
+
+    <div class="modal-acciones">
+      <button type="button" class="btn btn-sec" data-cerrar="#modal-zona">Cancelar</button>
+      <button type="submit" class="btn btn-primario">Publicar zona</button>
+    </div>
+  </form>
+</div>
+
+<!-- ═══════════════ Formulario: aportar ═══════════════ -->
+<div id="modal-aporte" class="modal" hidden>
+  <form id="form-aporte" class="modal-caja">
+    <h2>Quiero aportar</h2>
+    <p class="coords" id="aporte-coords"></p>
+    <p class="hint" id="aporte-destino"></p>
+
+    <label>¿Qué puedes aportar?
+      <select name="tipo" id="aporte-tipo" required></select>
+    </label>
+
+    <label>Título corto
+      <input name="titulo" type="text" required minlength="3" maxlength="120"
+             placeholder="Ej.: 2 Starlink disponibles desde Medellín" />
+    </label>
+
+    <div class="dos-col">
+      <label>Cantidad
+        <input name="cantidad" type="number" min="1" max="1000" value="1" required />
+      </label>
+      <label>Desde qué municipio
+        <input name="municipio_base" type="text" maxlength="120" placeholder="Medellín" />
+      </label>
+    </div>
+
+    <label>Persona u organización
+      <input name="organizacion" type="text" maxlength="120" placeholder="Opcional" />
+    </label>
+
+    <label>Detalles
+      <textarea name="descripcion" rows="3" maxlength="1000"
+        placeholder="Cuándo está disponible, si incluye transporte, qué necesitas para moverlo."></textarea>
+    </label>
+
+    <fieldset class="privado">
+      <legend>Tu contacto <span class="pii">privado</span></legend>
+      <p class="hint">Sin esto nadie puede coordinar contigo el traslado.
+        No se muestra en el mapa ni se puede leer con la llave pública.</p>
+      <div class="dos-col">
+        <label>Nombre <input name="contacto_nombre" type="text" maxlength="120" /></label>
+        <label>Teléfono <input name="contacto_telefono" type="text" maxlength="40" /></label>
+      </div>
+    </fieldset>
+
+    <div class="modal-acciones">
+      <button type="button" class="btn btn-sec" data-cerrar="#modal-aporte">Cancelar</button>
+      <button type="submit" class="btn btn-primario">Publicar aporte</button>
+    </div>
+  </form>
+</div>
+
+<!-- ═══════════════ Apunte interno (capa privada) ═══════════════ -->
+<div id="modal-reporte" class="modal" hidden>
+  <form id="form-reporte" class="modal-caja">
+    <h2 id="form-titulo">Nuevo apunte</h2>
+    <p class="coords" id="form-coords"></p>
+    <label>Tipo <select name="tipo" id="form-tipo" required></select></label>
+    <label>Prioridad <select name="prioridad" id="form-prioridad" required></select></label>
+    <label>Estado <select name="estado" id="form-estado" required></select></label>
+    <label>Municipio / barrio <input name="municipio" type="text" maxlength="120" /></label>
+    <label>Personas afectadas <input name="personas" type="number" min="0" max="100000" /></label>
+    <label>Descripción <textarea name="descripcion" rows="3" maxlength="1000"></textarea></label>
+    <label>Fuente <select name="fuente" id="form-fuente"></select></label>
+    <label>Contacto <span class="pii">dato personal</span>
+      <input name="contacto" type="text" maxlength="160" /></label>
+    <label class="check"><input type="checkbox" name="verificado" id="form-verificado" />
+      Verificado por una fuente confiable</label>
+    <div class="modal-acciones">
+      <button type="button" id="btn-cancelar" class="btn btn-sec">Cancelar</button>
+      <button type="button" id="btn-eliminar" class="btn btn-peligro" hidden>Eliminar</button>
+      <button type="submit" class="btn btn-primario">Guardar</button>
+    </div>
+  </form>
+</div>
+
+<!-- ═══════════════ Plan de entrega ═══════════════ -->
+<div id="modal-entrega" class="modal" hidden>
+  <div class="modal-caja">
+    <h2>A dónde van estos datos</h2>
+    <p class="aviso-inline">
+      <strong>Sé honesto contigo y con quien reporta:</strong> hoy este mapa no
+      está conectado a ningún despacho oficial. Un punto aquí no manda a nadie.
+      Para emergencias, la línea es <strong>123</strong>.
+    </p>
+    <p>Para que esto sirva de verdad, los datos tienen que llegar a quien ejecuta:</p>
+    <ul class="lista-entrega">
+      <li><strong>UNGRD</strong> — coordinación nacional. Destinatario del consolidado.</li>
+      <li><strong>DAGRD / CMGRD municipal</strong> — despacha máquina y personal.</li>
+      <li><strong>Cruz Roja Colombiana y Defensa Civil</strong> — búsqueda y rescate.</li>
+      <li><strong>Bomberos</strong> — estructuras colapsadas.</li>
+      <li><strong>Operadores de red</strong> para restablecer servicio a escala.</li>
+    </ul>
+    <p>Mientras no exista un canal acordado, esto es un ejercicio de visualización
+       y de conexión entre quien necesita y quien puede aportar. Es útil — pero
+       no sustituye al 123 ni a un organismo de socorro.</p>
+    <div class="modal-acciones">
+      <button type="button" class="btn btn-primario" data-cerrar="#modal-entrega">Entendido</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="zonas.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

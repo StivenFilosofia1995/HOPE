@@ -1,0 +1,30 @@
+# ─────────────────────────────────────────────────────────────────
+# Variables de entorno. Contienen llaves. NUNCA subir.
+# .env.example sí se sube: es la plantilla sin valores reales.
+# ─────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# Base de datos local: la capa de apuntes internos incluye el campo
+# contacto, que es dato personal.
+data/
+*.db
+*.db-wal
+*.db-shm
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+node_modules/
+
+# Ajustes locales de Claude Code: son de esta máquina, no del proyecto.
+.claude/settings.local.json
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
