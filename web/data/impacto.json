@@ -1,0 +1,116 @@
+{
+  "_meta": {
+    "que_es": "Daños del sismo M7.4 recogidos de PRENSA. No son medidas de instrumento ni cifras oficiales verificadas por HOPE.",
+    "por_que_existe": "Las fuentes instrumentales del mapa (IODA, XM, satélite) miden infraestructura, no personas. Tres días después del sismo la red ya se recuperó y el mapa se veía vacío, mientras la prensa reportaba 190 muertos. Esa capa faltaba.",
+    "como_usarlo": "Sirve para saber DÓNDE concentrar la atención, no para dar una cifra por buena. Cada dato lleva su medio, su fecha de corte y su enlace. Las cifras estaban subiendo entre cortes: 132 muertos el 11 de agosto, 190 el 13.",
+    "advertencia": "Los reportes de prensa se contradicen y se corrigen. Antes de mover un recurso con esto, confirmar con UNGRD, el CMGRD del municipio o la Cruz Roja.",
+    "recogido": "2026-08-13",
+    "recogido_por": "Búsqueda web durante la sesión de HOPE del 13 de agosto de 2026."
+  },
+
+  "nacional": {
+    "muertos": 190,
+    "heridos": 1679,
+    "fecha_corte": "2026-08-13",
+    "fuente": "Infobae (cobertura en vivo)",
+    "url": "https://www.infobae.com/colombia/2026/08/10/en-vivo-fuerte-temblor-de-74-se-sintio-en-colombia-cali-y-manizales-reportan-derrumbes-en-edificaciones/",
+    "corte_anterior": {
+      "muertos": 132,
+      "heridos": 570,
+      "viviendas_averiadas": 1575,
+      "viviendas_destruidas": 37,
+      "edificios_colapsados": 61,
+      "fecha_corte": "2026-08-11",
+      "fuente": "Chequeado, citando a La Silla Vacía",
+      "url": "https://chequeado.com/el-explicador/terremoto-de-magnitud-7-4-en-colombia-el-gobierno-declara-desastre-nacional-y-reporta-al-menos-111-muertos/"
+    },
+    "estado_declarado": "Desastre nacional",
+    "alcance": "Sentido en al menos 900 centros poblados; más de 12.000 personas lo reportaron por el formulario «Sismo sentido» del SGC."
+  },
+
+  "zonas": [
+    {
+      "codigo": 734,
+      "nombre": "Risaralda",
+      "foco": "Pereira",
+      "lat": 4.8133,
+      "lon": -75.6961,
+      "nivel": "critico",
+      "muertos": 60,
+      "resumen": "Pereira concentra la mayor parte de los fallecidos del país.",
+      "detalle": "La capital de Risaralda es descrita como una de las ciudades más golpeadas. Es también el departamento con la red de internet más degradada según IODA y el municipio con más pérdida de luz nocturna medida por satélite: tres señales independientes coinciden aquí.",
+      "fecha_corte": "2026-08-11",
+      "fuente": "Chequeado, citando a La Silla Vacía",
+      "url": "https://chequeado.com/el-explicador/terremoto-de-magnitud-7-4-en-colombia-el-gobierno-declara-desastre-nacional-y-reporta-al-menos-111-muertos/"
+    },
+    {
+      "codigo": 733,
+      "nombre": "Quindío",
+      "foco": "Armenia",
+      "lat": 4.5339,
+      "lon": -75.6811,
+      "nivel": "critico",
+      "heridos": 330,
+      "viviendas_afectadas": 10000,
+      "resumen": "Más de 10.000 viviendas afectadas y 330 heridos.",
+      "detalle": "Daños reportados en hospitales, alcaldías y comercios. Cerca del 70% de las instituciones educativas del departamento resultaron afectadas.",
+      "fecha_corte": "2026-08-13T09:04:00-05:00",
+      "fuente": "Infobae (cobertura en vivo)",
+      "url": "https://www.infobae.com/colombia/2026/08/10/en-vivo-fuerte-temblor-de-74-se-sintio-en-colombia-cali-y-manizales-reportan-derrumbes-en-edificaciones/"
+    },
+    {
+      "codigo": 745,
+      "nombre": "Chocó",
+      "foco": "San José del Palmar",
+      "lat": 4.8956,
+      "lon": -76.2289,
+      "nivel": "alto",
+      "muertos": 13,
+      "heridos": 182,
+      "resumen": "13 muertos y 182 heridos en el departamento del epicentro.",
+      "detalle": "San José del Palmar es el epicentro. El 13 de agosto se registró una réplica con epicentro en Nóvita. Es la zona con menos infraestructura de medición del país: las cifras de aquí son las que más pueden estar por debajo de la realidad.",
+      "fecha_corte": "2026-08-13T08:46:00-05:00",
+      "fuente": "Infobae (cobertura en vivo)",
+      "url": "https://www.infobae.com/colombia/2026/08/10/en-vivo-fuerte-temblor-de-74-se-sintio-en-colombia-cali-y-manizales-reportan-derrumbes-en-edificaciones/"
+    },
+    {
+      "codigo": 741,
+      "nombre": "Valle del Cauca",
+      "foco": "Cali",
+      "lat": 3.4516,
+      "lon": -76.532,
+      "nivel": "medio",
+      "resumen": "Afectaciones importantes reportadas, sin cifras desglosadas.",
+      "detalle": "Cali reportó derrumbes en edificaciones desde las primeras horas. La prensa la menciona entre las ciudades afectadas pero no publica cifras propias del municipio.",
+      "fecha_corte": "2026-08-13",
+      "fuente": "Infobae, CNN en Español",
+      "url": "https://cnnespanol.cnn.com/2026/08/10/colombia/terremoto-sismo-san-jose-choco-orix"
+    },
+    {
+      "codigo": 730,
+      "nombre": "Caldas",
+      "foco": "Manizales",
+      "lat": 5.0689,
+      "lon": -75.5174,
+      "nivel": "medio",
+      "resumen": "Afectaciones importantes reportadas, sin cifras desglosadas.",
+      "detalle": "Manizales reportó derrumbes en edificaciones. Mencionada entre las ciudades golpeadas, sin cifras propias publicadas.",
+      "fecha_corte": "2026-08-13",
+      "fuente": "Infobae, CNN en Español",
+      "url": "https://cnnespanol.cnn.com/2026/08/10/colombia/terremoto-sismo-san-jose-choco-orix"
+    },
+    {
+      "codigo": 737,
+      "nombre": "Cauca",
+      "foco": "Popayán",
+      "lat": 2.4448,
+      "lon": -76.6147,
+      "nivel": "medio",
+      "resumen": "Mencionado entre los afectados, sin cifras.",
+      "detalle": "Aparece en la cobertura entre los departamentos con afectación, pero no se publicaron cifras propias.",
+      "fecha_corte": "2026-08-13",
+      "fuente": "Infobae (cobertura en vivo)",
+      "url": "https://www.infobae.com/colombia/2026/08/10/en-vivo-fuerte-temblor-de-74-se-sintio-en-colombia-cali-y-manizales-reportan-derrumbes-en-edificaciones/"
+    }
+  ]
+}

@@ -132,6 +132,7 @@ async function iniciar() {
   // Estas tres son de red y pueden fallar sin tumbar el mapa.
   cargarReplicas();
   cargarIntensidad();
+  cargarImpacto();
 
   await Almacen.iniciar();
   await cargarConfigEscritura();
@@ -231,8 +232,10 @@ function crearMapa() {
     // Las luces de satélite van primero de todas: son una imagen de fondo y
     // cualquier otra cosa tiene que quedar por encima para poder leerse.
     luces:      L.layerGroup(),
+    mancha:     L.layerGroup(),
     intensidad: L.layerGroup(),
     anillos:    L.layerGroup(),
+    impacto:    L.layerGroup(),
     pulso:      L.layerGroup(),
     luzMun:     L.layerGroup(),
     energia:    L.layerGroup(),
@@ -416,6 +419,11 @@ async function cargarIntensidad() {
     if (vigente) url = vigente;
   } catch (_) { /* se usa la de respaldo */ }
 
+  // Primero la MANCHA rellena, debajo de los contornos. Las líneas solas se
+  // leen como curvas de nivel de un mapa topográfico y no comunican «aquí
+  // tembló fuerte»; la mancha sí, de un vistazo y sin leyenda.
+  cargarManchaIntensidad();
+
   try {
     const gj = await cargarJSON(url);
     L.geoJSON(gj, {
@@ -435,6 +443,153 @@ async function cargarIntensidad() {
     actualizarCuenta('intensidad', '—');
     nota('No se cargaron los contornos de intensidad del ShakeMap.', true);
   }
+}
+
+/* La mancha de sacudida del USGS, rellena y georreferenciada.
+   ───────────────────────────────────────────────────────────────────────────
+   El ShakeMap publica `intensity_overlay.png` junto a un world file `.pngw`
+   con la escala y la esquina noroeste. Con esos seis números se calculan los
+   límites exactos y la imagen se coloca sobre el mapa sin deformarla.
+
+   Es la zona roja mejor fundamentada que puede tener este mapa: no es una
+   estimación de HOPE, es el modelo de sacudida del USGS, revisado 233 veces
+   desde el sismo. */
+async function cargarManchaIntensidad() {
+  try {
+    const det = await cargarJSON(CFG.detalleEvento + S.evento.evento.id_usgs);
+    const sm = det.properties?.products?.shakemap?.[0];
+    const png = sm?.contents?.['download/intensity_overlay.png']?.url;
+    const pgw = sm?.contents?.['download/intensity_overlay.pngw']?.url;
+    if (!png || !pgw) return;
+
+    // World file: [escala_x, rot, rot, escala_y (negativa), x_centro_NO, y_centro_NO]
+    const w = (await (await fetch(pgw)).text()).trim().split(/\s+/).map(Number);
+    if (w.length < 6 || !w[0]) return;
+    const [ex, , , ey, x0, y0] = w;
+
+    // Hace falta el tamaño en píxeles para saber dónde termina la imagen.
+    const dim = await new Promise((ok, no) => {
+      const i = new Image();
+      i.onload = () => ok([i.naturalWidth, i.naturalHeight]);
+      i.onerror = no;
+      i.src = png;
+    });
+    const oeste = x0 - ex / 2, norte = y0 - ey / 2;
+    const este = oeste + dim[0] * ex, sur = norte + dim[1] * ey;
+
+    L.imageOverlay(png, [[sur, oeste], [norte, este]], {
+      opacity: 0.42,     // deja leer los nombres de los pueblos por debajo
+      interactive: false,
+      attribution: 'Sacudida: <a href="https://earthquake.usgs.gov/">USGS ShakeMap</a>',
+    }).addTo(S.capas.mancha);
+    actualizarCuenta('mancha', 'USGS');
+  } catch (_) {
+    actualizarCuenta('mancha', '—');
+  }
+}
+
+/* ── Zonas rojas: daños reportados por la prensa ──────────────────────────
+   Las fuentes instrumentales del mapa miden infraestructura, no personas. Tres
+   días después del sismo la red ya se había recuperado y el mapa se veía
+   vacío, mientras la prensa reportaba 190 muertos. Esa capa faltaba.
+
+   Va separada y rotulada como PRENSA a propósito. Un dato de periódico y una
+   medida de satélite no valen lo mismo, y mezclarlos en el mismo símbolo haría
+   que el mapa mintiera sobre su propia certeza. */
+
+const NIVEL_IMPACTO = {
+  critico: { color: '#c92a2a', op: 0.42, et: 'Impacto crítico' },
+  alto:    { color: '#e8590c', op: 0.32, et: 'Impacto alto' },
+  medio:   { color: '#f08c00', op: 0.22, et: 'Afectación reportada' },
+};
+
+async function cargarImpacto() {
+  try {
+    const [d, limites] = await Promise.all([cargarJSON('data/impacto.json'), cargarLimites()]);
+    S.impacto = d;
+    S.capas.impacto.clearLayers();
+
+    d.zonas.forEach((z) => {
+      const n = NIVEL_IMPACTO[z.nivel] || NIVEL_IMPACTO.medio;
+      const forma = limites.get(z.codigo);
+      if (forma) {
+        L.geoJSON(forma, {
+          style: { color: n.color, weight: 2.5, opacity: 0.95,
+                   fillColor: n.color, fillOpacity: n.op },
+        }).bindTooltip(`<b>${escapar(z.nombre)}</b><br>${escapar(z.resumen)}`, { sticky: true })
+          .bindPopup(popupImpacto(z, n, d), { maxWidth: 340 })
+          .addTo(S.capas.impacto);
+      }
+      // Chincheta con la cifra que manda. Es lo que se ve sin abrir nada.
+      const cifra = z.muertos ? `${z.muertos} muertos`
+                  : z.heridos ? `${z.heridos} heridos`
+                  : 'afectado';
+      L.marker([z.lat, z.lon], {
+        icon: L.divIcon({
+          className: 'marca-impacto',
+          html: `<div class="chapa" style="--c:${n.color}">
+                   <b>${escapar(z.foco)}</b><span>${escapar(cifra)}</span></div>`,
+          iconSize: [0, 0], iconAnchor: [0, 0],
+        }),
+      }).bindPopup(popupImpacto(z, n, d), { maxWidth: 340 }).addTo(S.capas.impacto);
+    });
+
+    actualizarCuenta('impacto', d.zonas.length);
+    pintarPanelImpacto(d);
+  } catch (e) {
+    const c = $('#impacto-resumen');
+    if (c) c.innerHTML = `<p class="hint err">No se pudo leer: ${escapar(e.message)}</p>`;
+  }
+}
+
+function popupImpacto(z, n, d) {
+  const cifras = [
+    z.muertos ? `<dt>Muertos</dt><dd>${nf.format(z.muertos)}</dd>` : '',
+    z.heridos ? `<dt>Heridos</dt><dd>${nf.format(z.heridos)}</dd>` : '',
+    z.viviendas_afectadas ? `<dt>Viviendas afectadas</dt><dd>${nf.format(z.viviendas_afectadas)}</dd>` : '',
+  ].join('');
+  return `
+    <h3>${escapar(z.foco)} — ${escapar(z.nombre)}</h3>
+    <div style="color:${n.color};font-weight:600">${escapar(n.et)}</div>
+    ${cifras ? `<dl style="margin-top:8px">${cifras}</dl>` : ''}
+    <div style="margin-top:8px">${escapar(z.detalle)}</div>
+    <div class="no-verificado" style="margin-top:8px">
+      Reporte de PRENSA, no una medida ni una cifra oficial verificada.
+      ${escapar(z.fuente)}, corte ${escapar(String(z.fecha_corte).slice(0, 10))}.
+      <a href="${escapar(z.url)}" target="_blank" rel="noopener">Ver la fuente</a>
+    </div>`;
+}
+
+function pintarPanelImpacto(d) {
+  const cont = $('#impacto-resumen');
+  if (!cont) return;
+  const nac = d.nacional;
+  cont.innerHTML = `
+    <div class="impacto-nacional">
+      <b>${nf.format(nac.muertos)} muertos · ${nf.format(nac.heridos)} heridos</b>
+      <span>en todo el país, corte del ${escapar(nac.fecha_corte)} según
+        ${escapar(nac.fuente)}. Dos días antes iban
+        ${nf.format(nac.corte_anterior.muertos)}: las cifras estaban subiendo.</span>
+    </div>` +
+    d.zonas.map((z) => {
+      const n = NIVEL_IMPACTO[z.nivel] || NIVEL_IMPACTO.medio;
+      const cifra = z.muertos ? `${nf.format(z.muertos)} muertos`
+                  : z.heridos ? `${nf.format(z.heridos)} heridos` : 'sin cifras';
+      return `<div class="fila-impacto" data-cod="${z.codigo}">
+        <span class="punto" style="background:${n.color}"></span>
+        <span class="nom"><b>${escapar(z.foco)}</b> · ${escapar(z.nombre)}</span>
+        <span class="cif">${escapar(cifra)}</span>
+      </div>`;
+    }).join('') +
+    `<p class="hint">Recogido de prensa el ${escapar(d._meta.recogido)}.
+      ${escapar(d._meta.advertencia)}</p>`;
+
+  cont.querySelectorAll('.fila-impacto').forEach((f) => {
+    f.onclick = () => {
+      const z = d.zonas.find((x) => String(x.codigo) === f.dataset.cod);
+      if (z) S.mapa.setView([z.lat, z.lon], 9);
+    };
+  });
 }
 
 function descripcionMMI(v) {
@@ -949,7 +1104,10 @@ async function pintarCapaPulso(d) {
         // «no estamos midiendo bien aquí», no «aquí no pasa nada».
         dashArray: dudosa ? '6 5' : null,
         fillColor: c.color,
-        fillOpacity: tranquila ? 0.06 : dudosa ? 0.1 : 0.26,
+        // Relleno muy bajo: la mancha del USGS y las zonas rojas de danos
+        // ya ocupan el fondo. Si esta capa tambien rellena fuerte, los
+        // colores se mezclan y no se distingue ninguna.
+        fillOpacity: tranquila ? 0.04 : dudosa ? 0.07 : 0.12,
       },
     })
       .bindTooltip(`<b>${escapar(z.nombre)}</b><br>${escapar(c.titular)}`,
@@ -2088,6 +2246,8 @@ function activarModoAgregar(activo) {
 
 function construirControlCapas() {
   const defs = [
+    ['impacto',    'Danos reportados (prensa)','#c92a2a'],
+    ['mancha',     'Fuerza del sismo (USGS)',  '#ff9100'],
     ['pulso',      'Sin internet (por zona)',  '#e03131'],
     ['luzMun',     'Sin luz (por municipio)',  '#f59f00'],
     ['luces',      'Luces nocturnas (VIIRS)',  '#ffd60a'],
