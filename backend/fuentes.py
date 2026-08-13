@@ -1064,10 +1064,19 @@ def luces_nocturnas() -> dict:
         "ultima_procesada": next((n["fecha"] for n in noches if n["procesada"]), None),
         "paso_satelital_local": "~01:30 hora Colombia",
         "advertencia": (
-            "Una noche nublada se ve tan oscura como una noche sin luz, y el "
-            "Chocó es de las zonas más nubladas del mundo. Comparar siempre "
-            "contra la noche de referencia previa al sismo, y no concluir un "
-            "apagón sin descartar antes que sea nubosidad."
+            "ESTA CAPA NO SIRVE PARA CONCLUIR UN APAGÓN. Es contexto visual. "
+            "La imagen está dominada por la luz de la LUNA reflejada en las "
+            "nubes, que es mucho más brillante que un pueblo entero encendido. "
+            "Medido el 2026-08-13 sobre el eje Chocó-Valle: el brillo promedio "
+            "SUBIÓ de 75 a 137 entre el 8 y el 12 de agosto, no porque hubiera "
+            "más luz eléctrica sino porque la luna creció. Comparar dos noches "
+            "a ojo mide fase lunar y nubosidad, no electricidad."
+        ),
+        "camino_correcto": (
+            "Para medir apagones de verdad hace falta el producto NASA Black "
+            "Marble VNP46A2, que corrige luna y atmósfera y trae máscara de "
+            "nubes. Exige cuenta gratuita de Earthdata "
+            "(urs.earthdata.nasa.gov) y descargar granulos HDF5, no teselas."
         ),
         "nota_procesado": (
             "Las noches sin procesar salen deshabilitadas. Una tesela que la "

@@ -460,7 +460,9 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
 .pulso-fila {
   border: 1px solid var(--linea); border-left: 3px solid var(--c, var(--linea));
   border-radius: 7px; padding: 9px 11px; background: var(--bg-2);
+  cursor: pointer;
 }
+.pulso-fila:hover { border-color: var(--c, #3d4657); }
 .pulso-fila header { display: flex; align-items: center; gap: 7px; }
 .pulso-fila .ico { font-size: 14px; line-height: 1; }
 .pulso-fila .nombre { font-size: 13px; font-weight: 600; }

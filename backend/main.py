@@ -31,6 +31,7 @@ from typing import Iterator, Literal, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -223,6 +224,12 @@ app = FastAPI(
     ),
     version="0.1.0",
 )
+
+# Los límites de los departamentos son 312 KB de GeoJSON y comprimen a una
+# fracción: es texto con muchísimos números repetidos. Quien abre esto suele
+# estar en la zona del desastre, con la red a medias — ahorrarle 250 KB no es
+# una optimización cosmética.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Abierto porque en desarrollo el frontend suele servirse desde otro puerto
 # (p. ej. `python -m http.server` en web/). Cerrar antes de cualquier despliegue.

@@ -679,8 +679,8 @@ async function cargarPulso() {
       ? await cargarJSON(`${Almacen.base}/cortes/vivo?horas=${horas}`)
       : await pulsoVivoNavegador(horas);
     S.pulso = d;
+    await pintarCapaPulso(d);   // primero el mapa: la lista enlaza a sus polígonos
     pintarPulso(d);
-    pintarCapaPulso(d);
   } catch (e) {
     cont.innerHTML = `<p class="hint err">No se pudo leer IODA: ${escapar(e.message)}</p>`;
   }
@@ -707,7 +707,21 @@ function pintarPulso(d) {
         : ''}
     </div>`;
 
-  $('#pulso-zonas').innerHTML = d.zonas.map(filaPulso).join('');
+  const cont = $('#pulso-zonas');
+  cont.innerHTML = d.zonas.map(filaPulso).join('');
+
+  // Tocar una tarjeta lleva el mapa a ese departamento. Sin esto, la lista y
+  // el mapa son dos cosas separadas y hay que buscar a ojo dónde queda cada
+  // nombre — que es justo lo que no se puede pedir en una emergencia.
+  cont.querySelectorAll('.pulso-fila').forEach((art, i) => {
+    art.addEventListener('click', (ev) => {
+      if (ev.target.closest('summary, details')) return;   // abrir el detalle no mueve el mapa
+      const capa = S.poligonos && S.poligonos.get(d.zonas[i].codigo);
+      if (!capa) return;
+      S.mapa.fitBounds(capa.getBounds(), { padding: [30, 30] });
+      capa.openPopup();
+    });
+  });
   $('#pulso-nota').innerHTML =
     `${escapar(d.fuente)} · ventana de ${d.ventana_horas} h contra ${escapar(d.comparado_contra)} ·
      consultado ${fechaCorta(d.consultado)}` +
@@ -884,40 +898,85 @@ function chispa(serie, color) {
   </svg>`;
 }
 
-/** Marcadores del pulso en el mapa. Se dibujan solo las zonas que tienen algo
- *  que decir: pintar un círculo verde sobre cada departamento normal solo tapa
- *  el mapa y compite con los reportes de la gente. */
-function pintarCapaPulso(d) {
-  S.capas.pulso.clearLayers();
-  let n = 0;
-  d.zonas.forEach((z) => {
-    if (z.clase === 'normal' || z.clase === 'sin_medicion') return;
-    if (!z.lat) return;
-    const c = CLASES_PULSO[z.clase] || CLASES_PULSO.sin_medicion;
-    const a = z.acceso || {};
-    const caida = Math.abs(a.delta_pct || 0);
-    const radio = Math.max(12, Math.min(44, 12 + caida * 0.9));
+/* El pulso se pinta sobre el DEPARTAMENTO ENTERO, con su borde real.
+   ───────────────────────────────────────────────────────────────────────────
+   Antes esto era un círculo centrado en un par de coordenadas escritas a mano
+   y con el radio proporcional a la caída. Ese círculo no correspondía a nada:
+   ni al borde del departamento, ni al alcance del corte. Y el ojo lee un
+   círculo en un mapa como «el problema está aquí dentro», así que afirmaba una
+   precisión que el dato no tiene.
 
-    L.circleMarker([z.lat, z.lon], {
-      radius: radio,
-      color: c.color, weight: z.clase === 'muestra_chica' ? 3 : 2,
-      dashArray: z.clase === 'muestra_chica' ? '5 4' : null,
-      fillColor: c.color, fillOpacity: z.clase === 'muestra_chica' ? 0.07 : 0.22,
-    }).bindPopup(`
-      <h3>${escapar(z.nombre)}</h3>
-      <div style="color:${c.color};font-weight:600">${c.ico} ${escapar(c.et)}</div>
-      <dl>
-        <dt>Acceso (última milla)</dt><dd>${fmtDelta(a.delta_pct)} vs. su normal</dd>
-        <dt>Troncal (rutas BGP)</dt><dd>${fmtDelta((z.troncal || {}).delta_pct)}</dd>
-      </dl>
-      <div style="margin-top:8px">${escapar(z.diagnostico || '')}</div>
-      ${c.falta ? `<div class="no-verificado" style="margin-top:6px">${escapar(z.accion || '')}</div>` : ''}
-      <div class="hint" style="margin-top:8px">Promedio de todo el departamento.
-        Para puntos exactos, ver la capa «Sondas de red».</div>
-    `, { maxWidth: 330 }).addTo(S.capas.pulso);
-    n++;
+   IODA mide por departamento completo y para Colombia no se puede bajar de
+   ahí. El polígono dice exactamente eso: en algún punto de esta área, y no
+   sabemos dónde. Es más honesto y además más útil, porque se ve qué municipios
+   caen dentro. */
+
+async function cargarLimites() {
+  if (S.limites) return S.limites;
+  try {
+    const g = await cargarJSON('data/departamentos.geojson');
+    S.limites = new Map(g.features.map((f) => [f.properties.codigo, f]));
+  } catch (e) {
+    S.limites = new Map();   // sin límites se sigue, solo que sin polígonos
+  }
+  return S.limites;
+}
+
+async function pintarCapaPulso(d) {
+  const limites = await cargarLimites();
+  S.capas.pulso.clearLayers();
+  S.poligonos = new Map();
+  let n = 0;
+
+  d.zonas.forEach((z) => {
+    const forma = limites.get(z.codigo);
+    if (!forma) return;
+    const c = CLASES_PULSO[z.clase] || CLASES_PULSO.sin_medicion;
+    const tranquila = z.clase === 'normal' || z.clase === 'sin_medicion';
+    const dudosa = z.clase === 'muestra_chica';
+
+    const capa = L.geoJSON(forma, {
+      attribution: 'Límites: <a href="https://www.geoboundaries.org/">geoBoundaries</a> / OpenStreetMap',
+      style: {
+        color: c.color,
+        // Las zonas normales van casi transparentes: tienen que verse para que
+        // se sepa que SÍ se están midiendo, sin taparle el mapa a lo urgente.
+        weight: tranquila ? 1 : 2,
+        opacity: tranquila ? 0.5 : 0.95,
+        // Borde punteado en la zona sin muestra suficiente: la forma dice
+        // «no estamos midiendo bien aquí», no «aquí no pasa nada».
+        dashArray: dudosa ? '6 5' : null,
+        fillColor: c.color,
+        fillOpacity: tranquila ? 0.06 : dudosa ? 0.1 : 0.26,
+      },
+    })
+      .bindTooltip(`<b>${escapar(z.nombre)}</b><br>${escapar(c.titular)}`,
+                   { sticky: true })
+      .bindPopup(popupPulso(z, c), { maxWidth: 320 })
+      .addTo(S.capas.pulso);
+
+    S.poligonos.set(z.codigo, capa);
+    if (!tranquila) n++;
   });
+
   actualizarCuenta('pulso', n);
+}
+
+function popupPulso(z, c) {
+  const a = z.acceso || {}, t = z.troncal || {};
+  return `
+    <h3>${escapar(z.nombre)}</h3>
+    <div style="color:${c.color};font-weight:600">${c.ico} ${escapar(c.titular)}</div>
+    <div style="margin-top:6px">${escapar(c.explica)}</div>
+    <dl style="margin-top:8px">
+      <dt>Casas y barrios</dt><dd>${fmtDelta(a.delta_pct)}</dd>
+      <dt>Cables de la región</dt><dd>${fmtDelta(t.delta_pct)}</dd>
+    </dl>
+    <div class="hint" style="margin-top:8px">Comparado con esta misma hora hace
+      7 días. El dato es del <b>departamento completo</b>: no dice en qué
+      municipio ni en qué barrio. Para puntos exactos, mira la capa «Sondas de
+      red» o los reportes de la gente.</div>
+  `;
 }
 
 /* ── Parte de situación: sacar los datos de la pantalla ────────────────────
