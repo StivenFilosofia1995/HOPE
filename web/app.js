@@ -133,6 +133,7 @@ async function iniciar() {
   cargarIntensidad();
 
   await Almacen.iniciar();
+  await cargarConfigEscritura();
   await recargarReportes();
 
   // Lo primero de la capa de datos es el pulso en vivo: es la razón de ser del
@@ -1522,6 +1523,13 @@ async function guardarFormulario(ev) {
     verificado: f.verificado.checked,
   };
 
+  // Se pide la llave ANTES de intentar guardar: si se pidiera al fallar, ya se
+  // habría perdido lo escrito en el formulario.
+  if (Almacen.modo === 'api' && !(await Llave.asegurar())) {
+    toast('Hace falta la llave de coordinación para guardar.', true);
+    return;
+  }
+
   try {
     if (S.editando) {
       await Almacen.actualizar(S.editando, datos);
@@ -1540,6 +1548,10 @@ async function guardarFormulario(ev) {
 async function eliminarActual() {
   if (!S.editando) return;
   if (!confirm('¿Eliminar este reporte? No se puede deshacer.')) return;
+  if (Almacen.modo === 'api' && !(await Llave.asegurar())) {
+    toast('Hace falta la llave de coordinación para eliminar.', true);
+    return;
+  }
   try {
     await Almacen.eliminar(S.editando);
     cerrarFormulario();
@@ -1630,6 +1642,10 @@ async function importarGeoJSON(archivo) {
     if (!feats.length) throw new Error('El archivo no contiene puntos GeoJSON.');
 
     const nuevos = feats.map(deFeature).map(({ id, ...r }) => r);  // ids nuevos
+    if (Almacen.modo === 'api' && !(await Llave.asegurar())) {
+      toast('Hace falta la llave de coordinación para importar.', true);
+      return;
+    }
     await Almacen.crearVarios(nuevos);
     await recargarReportes();
     toast(`${nuevos.length} reportes importados.`);
@@ -1844,15 +1860,91 @@ async function cargarJSON(url) {
   return r.json();
 }
 
+/* ── Llave de coordinación ─────────────────────────────────────────────────
+   La capa de apuntes internos es de quien organiza la respuesta. Leerla es
+   abierto; escribirla no puede serlo con el servicio en internet, porque un
+   DELETE sin llave borra el trabajo de alguien en plena emergencia.
+
+   La llave vive solo en este navegador. No viaja a Supabase ni se comparte con
+   la capa pública de zonas y aportes, que tiene su propio control (RLS). */
+
+const CLAVE_TOKEN = 'hope.token.v1';
+
+const Llave = {
+  leer() {
+    try { return localStorage.getItem(CLAVE_TOKEN) || ''; } catch (_) { return ''; }
+  },
+  guardar(v) {
+    try { v ? localStorage.setItem(CLAVE_TOKEN, v) : localStorage.removeItem(CLAVE_TOKEN); }
+    catch (_) {}
+    pintarEstadoLlave();
+  },
+  /** Se pide antes de escribir, no después: si se pidiera al fallar, la persona
+   *  ya habría perdido lo que escribió en el formulario. */
+  async asegurar() {
+    if (!S.escrituraConToken || this.leer()) return true;
+    const v = prompt(
+      'Llave de coordinación\n\n' +
+      'Este servidor exige una llave para crear, editar o borrar apuntes ' +
+      'internos. Es la variable HOPE_TOKEN del servidor.\n\n' +
+      'Se guarda solo en este navegador.');
+    if (!v) return false;
+    this.guardar(v.trim());
+    return true;
+  },
+};
+
+/** Pregunta al backend si exige llave para escribir. Sin backend no aplica:
+ *  todo se guarda en este navegador y no hay nada que proteger de terceros. */
+async function cargarConfigEscritura() {
+  S.escrituraConToken = false;
+  if (Almacen.modo === 'api') {
+    try {
+      const cfg = await cargarJSON(`${Almacen.base}/config`);
+      S.escrituraConToken = !!cfg.escritura_con_token;
+    } catch (_) { /* si no responde, se asume abierto y el 401 lo corregirá */ }
+  }
+  pintarEstadoLlave();
+}
+
+function pintarEstadoLlave() {
+  const el = $('#estado-llave');
+  if (!el) return;
+  if (!S.escrituraConToken) {
+    el.innerHTML = '<span class="hint">Este servidor no exige llave para escribir.</span>';
+    return;
+  }
+  const hay = !!Llave.leer();
+  el.innerHTML = hay
+    ? '<span class="llave-ok">🔑 Llave guardada en este navegador.</span> ' +
+      '<button type="button" id="btn-llave-borrar" class="btn-enlace">Borrarla</button>'
+    : '<span class="llave-falta">🔒 Sin llave: solo lectura.</span> ' +
+      '<button type="button" id="btn-llave-poner" class="btn-enlace">Poner llave</button>';
+  const b = $('#btn-llave-borrar');
+  if (b) b.onclick = () => { Llave.guardar(''); toast('Llave borrada de este navegador.'); };
+  const p = $('#btn-llave-poner');
+  if (p) p.onclick = () => Llave.asegurar();
+}
+
 async function pedir(url, metodo, cuerpo) {
+  const cabeceras = cuerpo ? { 'Content-Type': 'application/json' } : {};
+  const llave = Llave.leer();
+  if (llave && metodo && metodo !== 'GET') cabeceras['X-HOPE-Token'] = llave;
+
   const r = await fetch(url, {
     method: metodo,
-    headers: cuerpo ? { 'Content-Type': 'application/json' } : {},
+    headers: cabeceras,
     body: cuerpo ? JSON.stringify(cuerpo) : undefined,
   });
   if (!r.ok) {
     let det = `${r.status} ${r.statusText}`;
     try { const j = await r.json(); if (j.detail) det = JSON.stringify(j.detail); } catch (_) {}
+    // 401 con llave puesta = la llave está mal. Se borra para que el siguiente
+    // intento la vuelva a pedir en vez de repetir el mismo fallo en silencio.
+    if (r.status === 401 && llave) {
+      Llave.guardar('');
+      throw new Error('La llave de coordinación no es válida. Vuelve a intentarlo.');
+    }
     throw new Error(det);
   }
   return r.status === 204 ? null : r.json();

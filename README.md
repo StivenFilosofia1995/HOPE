@@ -434,13 +434,38 @@ uno hay que tocar el otro; el backend rechaza con 422 lo que no esté en su list
 
 ## Seguridad
 
-**El backend no tiene autenticación.** Está pensado para la máquina de quien
-coordina o una red interna de confianza. Antes de exponerlo:
+**La lectura es abierta; la escritura no.** El mapa, el pulso en vivo y todas
+las fuentes de cortes son datos públicos y se sirven sin restricción. La capa de
+coordinación interna (`/api/reportes`) sí está protegida, porque un `DELETE` sin
+llave borra el trabajo de alguien en mitad de una emergencia.
 
-1. Cerrar el CORS abierto en `backend/main.py` (`allow_origins=["*"]`).
-2. Poner autenticación.
-3. Limitar tasa de escritura — un formulario público sin límite se llena de ruido
-   en horas, y el ruido en una emergencia cuesta vidas.
+Reglas, seguras por defecto:
+
+| `HOPE_TOKEN` | POST / PUT / DELETE |
+|---|---|
+| definida | Exigen la cabecera `X-HOPE-Token` |
+| vacía | Solo desde la propia máquina. Desde internet, `503` explicando cómo activarla |
+
+Una petición que llegó con `X-Forwarded-For` (o `X-Real-IP` / `Forwarded`) nunca
+cuenta como local, aunque el peer lo parezca: si no, un despliegue cuyo proxy
+hable con el contenedor por loopback dejaría la escritura abierta al mundo.
+
+Generar la llave y ponerla en Railway → Variables del servicio:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+En el navegador se pide una sola vez y queda en `localStorage` de ese equipo. No
+viaja a Supabase ni se mezcla con la capa pública de zonas y aportes, que tiene
+su propio control por Row Level Security.
+
+**Lo que sigue pendiente:**
+
+1. El CORS sigue abierto (`allow_origins=["*"]`). Con la escritura ya protegida
+   el riesgo baja mucho, pero conviene restringirlo al dominio real.
+2. No hay límite de tasa. Un formulario público sin límite se llena de ruido en
+   horas, y el ruido en una emergencia cuesta vidas.
 
 ## Estado y qué sigue
 

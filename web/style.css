@@ -477,6 +477,14 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
   max-height: 46vh; overflow-y: auto; margin: 10px 0 0;
 }
 
+.estado-llave { font-size: 11.5px; margin: 8px 0; line-height: 1.5; }
+.llave-ok { color: var(--baja); }
+.llave-falta { color: var(--media); }
+.btn-enlace {
+  background: none; border: 0; padding: 0; font: inherit; font-size: 11.5px;
+  color: var(--acento); cursor: pointer; text-decoration: underline;
+}
+
 .explicador { margin-top: 12px; }
 .explicador summary {
   cursor: pointer; font-size: 11px; color: var(--acento);

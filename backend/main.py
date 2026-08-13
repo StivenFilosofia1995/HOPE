@@ -20,6 +20,7 @@ import csv
 import io
 import json
 import os
+import secrets
 import sqlite3
 import sys
 import uuid
@@ -28,7 +29,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator, Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -63,6 +64,53 @@ cargar_env()
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+
+# ── Control de escritura ────────────────────────────────────────────────────
+#
+# La capa de reportes es de COORDINACIÓN INTERNA: apuntes de quien está
+# organizando la respuesta. Leerla es abierto; escribirla no puede serlo si el
+# servicio está en internet, porque un DELETE sin llave borra el trabajo de
+# alguien en mitad de una emergencia.
+#
+# La regla es segura por defecto y no rompe el desarrollo local:
+#
+#   HOPE_TOKEN definido  →  POST/PUT/DELETE exigen la cabecera X-HOPE-Token.
+#   HOPE_TOKEN vacío     →  solo se acepta escritura desde la propia máquina.
+#                           Desde internet se responde 503 explicando cómo
+#                           activarlo. Nunca se queda abierto sin querer.
+#
+# La lectura, el mapa y todas las fuentes de cortes siguen abiertos en los dos
+# casos: son datos públicos y no se pierde nada si alguien los consulta.
+
+HOPE_TOKEN = os.environ.get("HOPE_TOKEN", "").strip()
+LOCALES = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def exigir_escritura(peticion: Request) -> None:
+    """Portero de las rutas que modifican datos. Lanza 401/503 si no procede."""
+    if HOPE_TOKEN:
+        entregado = (peticion.headers.get("X-HOPE-Token") or "").strip()
+        # compare_digest evita filtrar la llave por diferencias de tiempo.
+        if entregado and secrets.compare_digest(entregado, HOPE_TOKEN):
+            return
+        raise HTTPException(401, "Falta o no coincide la cabecera X-HOPE-Token.")
+
+    # Una petición que llegó por un proxy NUNCA es local, aunque el peer lo
+    # parezca. Sin esta comprobación, un despliegue cuyo proxy hable con el
+    # contenedor por loopback dejaría la escritura abierta a internet entera.
+    tras_proxy = any(peticion.headers.get(h) for h in
+                     ("x-forwarded-for", "x-real-ip", "forwarded"))
+    anfitrion = (peticion.client.host if peticion.client else "") or ""
+    if anfitrion in LOCALES and not tras_proxy:
+        return
+
+    raise HTTPException(
+        503,
+        "Escritura deshabilitada: este servicio está expuesto a internet y no "
+        "tiene HOPE_TOKEN configurado. Define la variable de entorno HOPE_TOKEN "
+        "(en Railway: Variables del servicio) y vuelve a intentarlo. La lectura "
+        "y el mapa siguen funcionando.",
+    )
 
 # ── Catálogos: deben coincidir con los de web/app.js ─────────────────────────
 
@@ -272,7 +320,8 @@ def listar(
     }
 
 
-@app.post("/api/reportes", response_model=Reporte, status_code=201, tags=["reportes"])
+@app.post("/api/reportes", response_model=Reporte, status_code=201, tags=["reportes"],
+          dependencies=[Depends(exigir_escritura)])
 def crear(r: ReporteEntrada) -> dict:
     t = ahora()
     fila = {**r.model_dump(), "id": uuid.uuid4().hex[:12], "creado_en": t, "actualizado_en": t}
@@ -284,7 +333,8 @@ def crear(r: ReporteEntrada) -> dict:
     return fila
 
 
-@app.put("/api/reportes/{id_reporte}", response_model=Reporte, tags=["reportes"])
+@app.put("/api/reportes/{id_reporte}", response_model=Reporte, tags=["reportes"],
+         dependencies=[Depends(exigir_escritura)])
 def actualizar(id_reporte: str, r: ReporteEntrada) -> dict:
     with conexion() as con:
         actual = con.execute("SELECT * FROM reportes WHERE id = ?", (id_reporte,)).fetchone()
@@ -297,7 +347,8 @@ def actualizar(id_reporte: str, r: ReporteEntrada) -> dict:
         return a_dict(con.execute("SELECT * FROM reportes WHERE id = ?", (id_reporte,)).fetchone())
 
 
-@app.delete("/api/reportes/{id_reporte}", status_code=204, tags=["reportes"])
+@app.delete("/api/reportes/{id_reporte}", status_code=204, tags=["reportes"],
+            dependencies=[Depends(exigir_escritura)])
 def eliminar(id_reporte: str) -> Response:
     with conexion() as con:
         cur = con.execute("DELETE FROM reportes WHERE id = ?", (id_reporte,))
@@ -559,6 +610,9 @@ def config_publica() -> dict:
         "supabase_anon_key": SUPABASE_ANON_KEY,
         "configurado": bool(SUPABASE_URL and SUPABASE_ANON_KEY),
         "evento_usgs": "us6000tjl2",
+        # El frontend necesita saberlo para pedir la llave ANTES de que la
+        # persona escriba un apunte y lo pierda contra un 401.
+        "escritura_con_token": bool(HOPE_TOKEN),
     }
 
 
