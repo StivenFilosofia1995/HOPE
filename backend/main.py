@@ -503,6 +503,37 @@ def cortes_luces() -> dict:
     return fuentes.luces_nocturnas()
 
 
+@app.get("/api/cortes/luz-municipios", tags=["cortes"])
+def luz_municipios(noches: int = Query(3, ge=1, le=7)) -> dict:
+    """**Energía a escala de municipio**, por satélite. Lo más fino que hay.
+
+    Compara la luz nocturna de cada pueblo contra sus propias noches previas al
+    sismo, usando el producto VIIRS corregido por luna y atmósfera. Es la única
+    fuente del sistema que baja del departamento para energía: XM publica por
+    área operativa con dos días de rezago y IODA no baja del departamento.
+
+    Ojo con las fechas: el satélite pasa a la 1:30 de la madrugada y el sismo
+    fue a las 7:34, así que la imagen del 10 de agosto es LÍNEA BASE.
+    """
+    archivo = DIR_WEB / "data" / "ciudades.json"
+    if not archivo.is_file():
+        raise HTTPException(503, "Falta web/data/ciudades.json")
+    try:
+        crudo = json.loads(archivo.read_text(encoding="utf-8"))
+        municipios = [
+            {"nombre": c["nombre"], "departamento": c.get("departamento", ""),
+             "lat": float(c["lat"]), "lon": float(c["lon"])}
+            for c in crudo.get("ciudades", []) if c.get("lat") and c.get("lon")
+        ]
+    except Exception as e:
+        raise HTTPException(500, f"No se pudo leer el catálogo: {type(e).__name__}: {e}")
+
+    try:
+        return fuentes.luces_municipios(municipios, noches)
+    except Exception as e:
+        raise HTTPException(502, f"GIBS no respondió: {type(e).__name__}: {e}")
+
+
 @app.get("/api/cortes/radar", tags=["cortes"])
 def cortes_radar(dias: int = Query(7, ge=1, le=28)) -> dict:
     """Cortes confirmados y tráfico en vivo de Cloudflare Radar.

@@ -70,7 +70,9 @@ Advertencia de interpretación, importante:
 
 from __future__ import annotations
 
+import io
 import json
+import math
 import os
 import sqlite3
 import time
@@ -1225,6 +1227,231 @@ def parte_situacion(horas: int = 3, url_mapa: str = "") -> str:
         L.append(f"Mapa: {url_mapa}")
 
     return "\n".join(L)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  BLACK MARBLE — energía a escala de municipio
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Esto resuelve el hueco más grande del sistema. XM publica por área operativa
+# con dos días de rezago; IODA no baja del departamento. Ninguna de las dos
+# dice qué PUEBLO se quedó sin luz.
+#
+# La imagen cruda del satélite tampoco: se probó y está dominada por luz de
+# luna reflejada en nubes. Sobre el eje Chocó-Valle su brillo osciló entre 75 y
+# 216 en cuatro noches, un factor de tres, sin que hubiera pasado nada
+# eléctrico. Medir con eso es medir la fase lunar.
+#
+# El producto BRDF-corregido y rellenado sí sirve. Corrige luna y atmósfera, y
+# GIBS lo publica como teselas SIN LLAVE — que es lo que hace esto posible hoy.
+# Las mismas cuatro noches, ya corregidas: 8,8 / 10,7 / 8,7 / 13,5. Y Bogotá,
+# usada como control, se mantiene clavada en 255,0 las cuatro noches.
+#
+# ── Detalle de fechas que es fácil equivocar ──────────────────────────────
+# El satélite pasa hacia la 1:30 de la madrugada y el sismo fue a las 7:34 de
+# la mañana del 10 de agosto. La imagen fechada el 10 es, por tanto, de SEIS
+# HORAS ANTES del sismo: es línea base, no evento. Las noches posteriores
+# empiezan el 11.
+#
+# ── Lo que este método NO puede hacer, y hay que decirlo ─────────────────
+# · Los valores salen de un PNG con paleta de color, no de radiancia física.
+#   Sirven para comparar una noche contra otra en el mismo sitio, no para dar
+#   un número absoluto en nW/cm²/sr.
+# · Las ciudades grandes SATURAN. Bogotá marca 255 siempre; un apagón parcial
+#   ahí no se vería hasta que fuera muy grave. Esas zonas se marcan aparte.
+# · "Rellenado" significa que los huecos de nube se completan con modelo. En
+#   una zona permanentemente nublada como el Chocó eso puede ser dato viejo
+#   presentado como actual. No es lo mismo "observado oscuro" que "estimado".
+
+BLACK_MARBLE = (
+    "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/"
+    "VIIRS_NOAA20_GapFilled_BRDF_Corrected_DayNightBand_Radiance/default/"
+    "{fecha}/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png"
+)
+BM_ZOOM = 8                  # máximo de esa capa; el píxel mide ~610 m
+BM_VENTANA_PX = 3            # ±3 px ≈ 4 km alrededor del casco urbano
+BM_SATURADO = 248            # por encima de esto la medida ya no distingue
+NOCHE_SISMO = "2026-08-10"   # imagen de las 01:30, seis horas ANTES del sismo
+
+
+def _bm_tesela(fecha: str, tx: int, ty: int, cache: dict):
+    """Descarga y decodifica una tesela. El caché es por llamada: varios
+    municipios cercanos caen en la misma tesela y sería absurdo pedirla dos
+    veces."""
+    clave = (fecha, tx, ty)
+    if clave in cache:
+        return cache[clave]
+    try:
+        from PIL import Image
+        url = BLACK_MARBLE.format(fecha=fecha, z=BM_ZOOM, y=ty, x=tx)
+        req = urllib.request.Request(url, headers={"User-Agent": "HOPE/0.3"})
+        with urllib.request.urlopen(req, timeout=TIEMPO_ESPERA) as r:
+            im = Image.open(io.BytesIO(r.read())).convert("RGBA")
+    except Exception:
+        im = None
+    cache[clave] = im
+    return im
+
+
+def _bm_valor(lat: float, lon: float, fecha: str, cache: dict) -> Optional[float]:
+    """Luminosidad media alrededor de un punto, ignorando píxeles sin dato.
+
+    Los píxeles transparentes son AUSENCIA DE OBSERVACIÓN, no oscuridad.
+    Contarlos como negro inventaría apagones donde solo hubo nubes.
+    """
+    n = 2 ** BM_ZOOM
+    xw = (lon + 180) / 360 * n
+    lr = math.radians(lat)
+    yw = (1 - math.log(math.tan(lr) + 1 / math.cos(lr)) / math.pi) / 2 * n
+    tx, ty = int(xw), int(yw)
+
+    im = _bm_tesela(fecha, tx, ty, cache)
+    if im is None:
+        return None
+
+    px, py = int((xw - tx) * 256), int((yw - ty) * 256)
+    vals = []
+    for dy in range(-BM_VENTANA_PX, BM_VENTANA_PX + 1):
+        for dx in range(-BM_VENTANA_PX, BM_VENTANA_PX + 1):
+            X, Y = px + dx, py + dy
+            if 0 <= X < 256 and 0 <= Y < 256:
+                r, g, b, a = im.getpixel((X, Y))
+                if a > 0:
+                    vals.append(0.299 * r + 0.587 * g + 0.114 * b)
+    return sum(vals) / len(vals) if vals else None
+
+
+def _bm_clasificar(base: Optional[float], ahora: Optional[float]) -> tuple[str, str]:
+    if base is None or ahora is None:
+        return ("sin_dato",
+                "El satélite no dejó observación utilizable aquí en estas noches.")
+    if base >= BM_SATURADO:
+        return ("saturado",
+                "Zona tan iluminada que la medida se satura. Un apagón parcial no "
+                "se distinguiría; solo se vería uno muy grande.")
+    if base < 12:
+        return ("muy_oscuro",
+                "Casi no había luz medible aquí ni antes del sismo. No hay contra "
+                "qué comparar: es un punto ciego, no una zona sin problemas.")
+
+    cambio = (ahora - base) / base * 100
+    if cambio <= -40:
+        return ("sin_luz", f"Perdió {abs(cambio):.0f}% de su luz nocturna habitual. "
+                           f"Compatible con un apagón extenso.")
+    if cambio <= -15:
+        return ("poca_luz", f"Perdió {abs(cambio):.0f}% de su luz nocturna. "
+                            f"Compatible con un apagón parcial o por sectores.")
+    if cambio >= 15:
+        return ("mas_luz", f"Tiene {cambio:.0f}% más luz que antes. Puede ser "
+                           f"restablecimiento, o plantas y luminarias de emergencia.")
+    return ("normal", f"Su luz nocturna está como antes del sismo ({cambio:+.0f}%).")
+
+
+def luces_municipios(municipios: list[dict], noches: int = 3) -> dict:
+    """Cambio de luz nocturna por municipio contra las noches previas al sismo.
+
+    `municipios` es una lista de dicts con nombre, departamento, lat y lon.
+    """
+    clave = f"bm_municipios:{noches}:{len(municipios)}"
+    if (c := _cache_leer(clave, 3600)) is not None:
+        return c
+
+    hoy = datetime.now(timezone.utc).date()
+    base_f = date.fromisoformat(NOCHE_SISMO)
+
+    # Noches de referencia: las anteriores al sismo, incluida la del propio día
+    # 10, que es de antes de que temblara.
+    noches_base = [(base_f - timedelta(days=i)).isoformat() for i in range(0, noches)]
+    # Noches posteriores: desde el 11 hasta donde alcance el archivo.
+    noches_post = [(hoy - timedelta(days=i)).isoformat() for i in range(1, noches + 3)]
+    noches_post = [f for f in noches_post if f > NOCHE_SISMO][:noches]
+
+    cache: dict = {}
+
+    # Se piden primero, en paralelo, las teselas distintas que hacen falta. Sin
+    # esto cada municipio esperaba su descarga en fila y la consulta tardaba
+    # ~25 s; los municipios vecinos comparten tesela, así que son pocas.
+    n_lado = 2 ** BM_ZOOM
+    necesarias = set()
+    for m in municipios:
+        xw = (m["lon"] + 180) / 360 * n_lado
+        lr = math.radians(m["lat"])
+        yw = (1 - math.log(math.tan(lr) + 1 / math.cos(lr)) / math.pi) / 2 * n_lado
+        for f in noches_base + noches_post:
+            necesarias.add((f, int(xw), int(yw)))
+    _en_paralelo([(lambda t=t: _bm_tesela(t[0], t[1], t[2], cache))
+                  for t in necesarias], hilos=8)
+
+    def medir(m: dict) -> dict:
+        def promedio(fechas):
+            vs = [v for f in fechas
+                  if (v := _bm_valor(m["lat"], m["lon"], f, cache)) is not None]
+            return (sum(vs) / len(vs), len(vs)) if vs else (None, 0)
+
+        base, n_base = promedio(noches_base)
+        ahora, n_post = promedio(noches_post)
+        clase, lectura = _bm_clasificar(base, ahora)
+        cambio = (round((ahora - base) / base * 100, 1)
+                  if base and ahora and base >= 12 else None)
+
+        # Un pueblo pequeño parte de muy poca luz, y sobre poca luz un cambio
+        # de dos o tres unidades ya da un porcentaje enorme. Es el mismo
+        # problema de muestra chica que en la red: el porcentaje se calcula
+        # igual, pero se dice que no es concluyente en vez de fingir precisión.
+        if base is None:
+            confianza = "sin_dato"
+        elif base >= BM_SATURADO:
+            confianza = "saturada"
+        elif base < 30:
+            confianza = "baja"
+        elif base < 80:
+            confianza = "media"
+        else:
+            confianza = "alta"
+        if confianza == "baja" and clase in ("sin_luz", "poca_luz"):
+            lectura += (" Aviso: este municipio parte de muy poca luz medible, "
+                        "así que el porcentaje es frágil. Confirmar en terreno "
+                        "antes de darlo por bueno.")
+
+        return {**m, "luz_base": round(base, 1) if base else None,
+                "luz_ahora": round(ahora, 1) if ahora else None,
+                "cambio_pct": cambio, "clase": clase, "lectura": lectura,
+                "confianza": confianza,
+                "noches_usadas": {"base": n_base, "despues": n_post}}
+
+    # En serie a propósito: el caché de teselas es compartido y los municipios
+    # cercanos reutilizan la misma imagen. Paralelizar la pediría varias veces.
+    filas = [medir(m) for m in municipios]
+
+    orden = {"sin_luz": 0, "poca_luz": 1, "muy_oscuro": 2, "saturado": 3,
+             "mas_luz": 4, "normal": 5, "sin_dato": 6}
+    filas.sort(key=lambda f: (orden.get(f["clase"], 9), f.get("cambio_pct") or 0))
+
+    res = {
+        "fuente": "NASA VIIRS NOAA-20 Black Marble (BRDF-corregido y rellenado), vía GIBS",
+        "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "noches_base": noches_base,
+        "noches_despues": noches_post,
+        "resolucion_m": 610,
+        "como_leer": (
+            "Compara la luz nocturna de cada pueblo contra sus propias noches "
+            "previas al sismo. La imagen del 10 de agosto es de las 01:30, seis "
+            "horas ANTES del sismo, así que cuenta como línea base."
+        ),
+        "limites": [
+            "Los valores salen de una imagen con paleta de color, no de "
+            "radiancia física: sirven para comparar noches en el mismo sitio, "
+            "no como número absoluto.",
+            "Las ciudades muy iluminadas saturan la medida y salen marcadas "
+            "aparte: allí un apagón parcial no se distinguiría.",
+            "El producto rellena huecos de nube con modelo. En zonas muy "
+            "nubladas como el Chocó eso puede ser estimación, no observación.",
+            "El archivo va con uno o dos días de rezago.",
+        ],
+        "municipios": filas,
+    }
+    _cache_guardar(clave, res)
+    return res
 
 
 # ── Cloudflare Radar (opcional, requiere llave gratuita) ────────────────────

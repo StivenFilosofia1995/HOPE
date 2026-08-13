@@ -547,6 +547,37 @@ select.mini { width: auto; margin: 0; padding: 3px 6px; font-size: 11px; }
   color: var(--media); border-left: 2px solid var(--media); padding-left: 8px;
 }
 
+/* ── Iconos de estado sobre el mapa ──────────────────────────────────────
+   El nombre va PEGADO al icono, no en un tooltip: un icono suelto obliga a
+   pasar el cursor para saber de qué pueblo habla, y con el dedo en un celular
+   eso no existe. La sombra de texto lo hace legible sobre cualquier mapa base. */
+
+.marca-estado { background: none; border: 0; }
+.marca-caja { position: relative; display: flex; align-items: center; justify-content: center; }
+.marca-caja svg { filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .55)); }
+.marca-texto {
+  position: absolute; left: 50%; top: 100%; transform: translateX(-50%);
+  margin-top: 1px; white-space: nowrap;
+  font-size: 11px; font-weight: 700; color: #fff;
+  text-shadow: 0 0 3px #000, 0 0 6px #000, 0 1px 2px #000;
+  pointer-events: none;
+}
+
+/* ── Panel: municipios que perdieron luz ─────────────────────────────── */
+
+.luz-municipios { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; }
+.fila-luz { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.ico-mini { flex: none; display: flex; line-height: 0; }
+.fila-luz .nom { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fila-luz .cambio {
+  font-variant-numeric: tabular-nums; font-weight: 700; color: #ff9f0a;
+}
+.fila-luz .frag {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--texto-2); border: 1px solid var(--linea);
+  border-radius: 3px; padding: 0 4px;
+}
+
 .estado-llave { font-size: 11.5px; margin: 8px 0; line-height: 1.5; }
 .llave-ok { color: var(--baja); }
 .llave-falta { color: var(--media); }

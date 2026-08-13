@@ -17,7 +17,7 @@ falsos, vienen de datos ciertos leídos como si midieran otra cosa.
 | ¿Cómo está la red **ahora**? | IODA `/signals/raw` | 5–10 min | no |
 | ¿Es la zona o es mi operador? | IODA `/signals/raw` por ASN | 5–10 min | no |
 | ¿Es falta de **luz** o de **fibra**? | IODA: cruce acceso × troncal | 5–10 min | no |
-| ¿Qué **pueblo** se quedó a oscuras? | NASA VIIRS luces nocturnas | 1 noche | no |
+| ¿Qué **pueblo** se quedó a oscuras? | NASA VIIRS **Black Marble** (BRDF-corregido) | 1–2 noches | no |
 | ¿Cuánta energía se dejó de entregar? | XM `DemaNoAtenNoProg` | 1–2 días | no |
 | ¿Hay un corte **confirmado**? | Cloudflare Radar | minutos | sí (gratis) |
 | ¿Hay internet en **este punto exacto**? | RIPE Atlas | minutos | no |
@@ -125,12 +125,48 @@ La única fuente de energía con resolución **municipal** (~500 m) y sin rezago
 días. El satélite pasa sobre Colombia hacia la **1:30 a.m.** y ve qué pueblo
 quedó a oscuras. Se usó así en Puerto Rico tras el huracán María.
 
-**Ojo con la capa que se elige.** La que más se cita, `VIIRS_SNPP_DayNightBand_ENCC`,
-**está congelada desde el 7 de julio de 2023**. Verificado. Las vivas son:
+**Hay dos productos y la diferencia lo es todo.**
 
-- `VIIRS_NOAA20_DayNightBand` — datos hasta hoy ✅ (la que usa HOPE)
-- `VIIRS_NOAA21_DayNightBand` — datos hasta hoy ✅
-- `VIIRS_NOAA20_DayNightBand_At_Sensor_Radiance` — radiancia cruda, `Level8`
+| Capa | Qué es | Sirve para |
+|---|---|---|
+| `VIIRS_NOAA20_DayNightBand` | Imagen **cruda** | Contexto visual. **NO** para medir apagones |
+| `VIIRS_NOAA20_GapFilled_BRDF_Corrected_DayNightBand_Radiance` | **Black Marble**: corregido por luna y atmósfera, huecos de nube rellenados. `Level8` | **Medir apagones por municipio** ✅ |
+
+`VIIRS_SNPP_DayNightBand_ENCC`, la que más se cita por ahí, **está congelada
+desde el 7 de julio de 2023**. Verificado.
+
+**Por qué la cruda no sirve, con números.** Brillo medio sobre el eje
+Chocó–Valle en cuatro noches:
+
+```
+noche        cruda    corregida
+2026-08-06   216,0      8,8
+2026-08-08    75,1     10,7
+2026-08-09   186,9      8,7
+2026-08-11   129,9     13,5
+```
+
+La cruda oscila un factor de **tres** sin que pasara nada eléctrico: es la fase
+de la luna reflejándose en las nubes. La corregida se mantiene. Como control,
+Bogotá marca 255,0 las cuatro noches en la corregida.
+
+**El detalle de fechas que es fácil equivocar:** el satélite pasa hacia la
+**1:30 de la madrugada** y el sismo fue a las **7:34**. La imagen fechada el 10
+de agosto es de **seis horas antes** del sismo: es línea base, no evento.
+
+**Lo que este método no puede hacer:**
+- Los valores salen de un PNG con paleta, no de radiancia física. Comparan una
+  noche contra otra en el mismo sitio; no son nW/cm²/sr.
+- Las ciudades grandes **saturan**. Bogotá y Medellín marcan 255 siempre: allí
+  un apagón parcial no se vería. Se marcan aparte.
+- Un pueblo que parte de muy poca luz da porcentajes frágiles. Por debajo de
+  ~30 se marca la medida como poco confiable en vez de fingir precisión.
+- «Rellenado» significa que los huecos de nube se completan con modelo: en el
+  Chocó eso puede ser estimación, no observación.
+
+Resultado real sobre los municipios del catálogo (noches 11–12 contra 8–10):
+**San José del Palmar, el pueblo del epicentro, −34%** (medida frágil, parte de
+poca luz); Palmira −18%; Zarzal −16%; Pereira −14%.
 
 **Dos límites que hay que respetar:**
 

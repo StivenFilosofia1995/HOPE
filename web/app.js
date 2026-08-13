@@ -141,6 +141,7 @@ async function iniciar() {
   // mapa. Lo demás llena el contexto detrás.
   cargarPulso();           // depende de Almacen: sabe si hay backend o no
   cargarOperadores();
+  cargarLuzMunicipios();
   cargarLuces();
   cargarCortes();
   cargarRadarCF();
@@ -179,6 +180,7 @@ function iniciarAutoRefresco() {
       cargarReplicas(),
       cargarCortes(),
       cargarRadarCF(),
+      cargarLuzMunicipios(),
       cargarSismosRecientes(),
       cargarClima(),
       cargarSondasRipe(),
@@ -232,6 +234,7 @@ function crearMapa() {
     intensidad: L.layerGroup(),
     anillos:    L.layerGroup(),
     pulso:      L.layerGroup(),
+    luzMun:     L.layerGroup(),
     energia:    L.layerGroup(),
     replicas:   L.layerGroup(),
     ciudades:   L.layerGroup(),
@@ -955,7 +958,22 @@ async function pintarCapaPulso(d) {
       .addTo(S.capas.pulso);
 
     S.poligonos.set(z.codigo, capa);
-    if (!tranquila) n++;
+
+    // Icono en el centro del polígono. No es una afirmación de dónde está el
+    // corte —eso no se sabe— sino la ETIQUETA del departamento entero, igual
+    // que el nombre de un país va escrito en su centro.
+    if (!tranquila) {
+      const nivel = { troncal_caido: 'sin', ultima_milla_caida: 'sin',
+                      troncal_degradado: 'poca', ultima_milla_degradada: 'poca',
+                      degradacion_leve: 'poca', muestra_chica: 'duda' }[z.clase];
+      if (nivel) {
+        L.marker(capa.getBounds().getCenter(),
+                 { icon: marcaEstado('red', nivel, z.nombre) })
+          .bindPopup(popupPulso(z, c), { maxWidth: 320 })
+          .addTo(S.capas.pulso);
+      }
+      n++;
+    }
   });
 
   actualizarCuenta('pulso', n);
@@ -1089,6 +1107,175 @@ async function copiarParte() {
       ayuda.classList.add('destacado');
     }
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ICONOS DE ESTADO — dónde no hay luz, dónde hay poca, dónde no hay internet
+   ───────────────────────────────────────────────────────────────────────────
+   Un polígono de color dice «algo pasa en esta zona». Un icono dice QUÉ pasa,
+   y eso es lo que alguien necesita leer de un vistazo, sin abrir nada.
+
+   Reglas de legibilidad, que son las que hacen que se entienda a 24 px:
+     · Glifo BLANCO sobre disco de color sólido. Máximo contraste, siempre, sea
+       cual sea el mapa base que haya debajo.
+     · Formas que ya conoce todo el mundo: bombilla para luz, arcos de wifi
+       para internet. Nada de símbolos que haya que aprender.
+     · La barra diagonal es el «no» universal, el mismo de «prohibido fumar».
+     · Para «poca», el glifo se dibuja a medias en vez de tachado: la forma
+       distingue «no hay» de «hay poco» sin depender solo del color, que es lo
+       que falla con daltonismo y con el brillo del sol en pantalla.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const COLOR_ESTADO = {
+  sin:  '#e03131',   // rojo
+  poca: '#f59f00',   // ámbar
+  ok:   '#2f9e44',   // verde
+  duda: '#9c36b5',   // morado — no sabemos
+};
+
+/** Rayo. Se probó primero una bombilla y a 28 px se leía como un signo de
+ *  admiración: el bulbo más la rosca dan esa silueta. El rayo no se parece a
+ *  nada más y se reconoce como «electricidad» sin pensarlo.
+ *  En «poca» se pinta solo la mitad de abajo, así que la FORMA ya distingue
+ *  «no hay» de «hay poco» aunque no se distinga el color. */
+function glifoRayo(parcial) {
+  const D = 'M13.6 2.6 L7 13.4 h4 l-1 8 L17.4 10.6 h-4.5 z';
+  // «Poca» se dibuja más pequeño en vez de recortado a la mitad: un clipPath
+  // necesita un id, y con decenas de iconos en el mapa esos ids se repiten y
+  // el navegador acaba resolviendo todos contra el primero. Escalar no
+  // necesita id ninguno y se lee igual de bien.
+  return parcial
+    ? `<g transform="translate(12 12) scale(.68) translate(-12 -12)">
+         <path d="${D}" fill="#fff"/></g>`
+    : `<path d="${D}" fill="#fff"/>`;
+}
+
+/** Arcos de wifi. En «poca» solo se pinta el arco pequeño: menos arcos = menos
+ *  señal, que es la convención que ya usa cualquier celular. */
+function glifoWifi(parcial) {
+  const tenue = parcial ? 'rgba(255,255,255,.3)' : '#fff';
+  return `
+    <path d="M4.4 9.6a11 11 0 0 1 15.2 0" fill="none" stroke="${tenue}"
+          stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M7.4 13.2a6.6 6.6 0 0 1 9.2 0" fill="none"
+          stroke="${parcial ? '#fff' : '#fff'}" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="12" cy="17.4" r="1.9" fill="#fff"/>`;
+}
+
+/** Disco + glifo + barra. `nivel`: 'sin' | 'poca' | 'ok' | 'duda'. */
+function iconoEstado(tipo, nivel, px = 32) {
+  const color = COLOR_ESTADO[nivel] || COLOR_ESTADO.duda;
+  const glifo = nivel === 'duda'
+    ? '<text x="12" y="17" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">?</text>'
+    : (tipo === 'luz' ? glifoRayo(nivel === 'poca') : glifoWifi(nivel === 'poca'));
+
+  // La barra se dibuja dos veces: una gruesa del color del disco por debajo y
+  // la blanca encima. Ese borde de separación es lo que evita que la barra se
+  // funda con el glifo — el rayo es diagonal igual que ella y sin esto los dos
+  // se leían como una sola mancha.
+  const barra = nivel === 'sin'
+    ? `<line x1="5.6" y1="5.6" x2="18.4" y2="18.4" stroke="${color}" stroke-width="4"
+             stroke-linecap="round"/>
+       <line x1="5.6" y1="5.6" x2="18.4" y2="18.4" stroke="#fff" stroke-width="2.2"
+             stroke-linecap="round"/>`
+    : '';
+
+  return `<svg viewBox="0 0 24 24" width="${px}" height="${px}">
+      <circle cx="12" cy="12" r="11" fill="${color}" stroke="#fff" stroke-width="1.6"/>
+      ${glifo}${barra}
+    </svg>`;
+}
+
+function marcaEstado(tipo, nivel, etiqueta, px = 28) {
+  return L.divIcon({
+    className: 'marca-estado',
+    html: `<div class="marca-caja">${iconoEstado(tipo, nivel, px)}` +
+          (etiqueta ? `<span class="marca-texto">${escapar(etiqueta)}</span>` : '') + '</div>',
+    iconSize: [px, px],
+    iconAnchor: [px / 2, px / 2],
+  });
+}
+
+// ── Capa: energía por municipio, medida por satélite ────────────────────────
+
+const NIVEL_LUZ = {
+  sin_luz:    { nivel: 'sin',  et: 'Sin luz en buena parte del pueblo' },
+  poca_luz:   { nivel: 'poca', et: 'Menos luz de lo normal' },
+  muy_oscuro: { nivel: 'duda', et: 'Casi no había luz que medir' },
+  saturado:   { nivel: 'ok',   et: 'Demasiado iluminado para notar un corte parcial' },
+  mas_luz:    { nivel: 'ok',   et: 'Más luz que antes' },
+  normal:     { nivel: 'ok',   et: 'Luz como antes del sismo' },
+  sin_dato:   { nivel: 'duda', et: 'El satélite no dejó dato aquí' },
+};
+
+async function cargarLuzMunicipios() {
+  const cont = $('#luz-municipios');
+  if (Almacen.modo !== 'api') {
+    if (cont) cont.innerHTML = '<p class="hint">Necesita el backend de HOPE.</p>';
+    return;
+  }
+  try {
+    const d = await cargarJSON(`${Almacen.base}/cortes/luz-municipios`);
+    S.capas.luzMun.clearLayers();
+    let conProblema = 0;
+
+    d.municipios.forEach((m) => {
+      const n = NIVEL_LUZ[m.clase] || NIVEL_LUZ.sin_dato;
+      // Los municipios en su estado normal no se marcan: llenar el mapa de
+      // bombillas verdes tapa justo lo que hay que ver.
+      if (m.clase === 'normal' || m.clase === 'saturado' || m.clase === 'mas_luz') return;
+      conProblema++;
+      L.marker([m.lat, m.lon], { icon: marcaEstado('luz', n.nivel, m.nombre) })
+        .bindPopup(popupLuz(m, n, d), { maxWidth: 320 })
+        .addTo(S.capas.luzMun);
+    });
+
+    actualizarCuenta('luzMun', conProblema);
+    pintarPanelLuz(d, cont);
+  } catch (e) {
+    if (cont) cont.innerHTML = `<p class="hint err">No se pudo medir: ${escapar(e.message)}</p>`;
+  }
+}
+
+function popupLuz(m, n, d) {
+  const CONF = { alta: 'medida sólida', media: 'medida aceptable',
+                 baja: 'medida frágil', saturada: 'no distingue',
+                 sin_dato: 'sin dato' };
+  return `
+    <h3>${escapar(m.nombre)}</h3>
+    <div style="color:${COLOR_ESTADO[n.nivel]};font-weight:600">${escapar(n.et)}</div>
+    <dl style="margin-top:8px">
+      <dt>Luz antes del sismo</dt><dd>${m.luz_base ?? 's/d'}</dd>
+      <dt>Luz ahora</dt><dd>${m.luz_ahora ?? 's/d'}</dd>
+      <dt>Cambio</dt><dd>${m.cambio_pct !== null ? m.cambio_pct + '%' : 's/d'}</dd>
+      <dt>Confianza</dt><dd>${escapar(CONF[m.confianza] || m.confianza)}</dd>
+    </dl>
+    <div style="margin-top:8px">${escapar(m.lectura)}</div>
+    <div class="hint" style="margin-top:8px">Satélite VIIRS, resolución ${d.resolucion_m} m.
+      Compara las noches ${escapar(d.noches_despues.join(' y '))} contra
+      ${escapar(d.noches_base.join(', '))}, todas anteriores al sismo.</div>`;
+}
+
+function pintarPanelLuz(d, cont) {
+  if (!cont) return;
+  const malos = d.municipios.filter((m) => m.clase === 'sin_luz' || m.clase === 'poca_luz');
+  const ciegos = d.municipios.filter((m) => m.clase === 'muy_oscuro' || m.clase === 'sin_dato');
+
+  cont.innerHTML = (malos.length
+    ? malos.map((m) => {
+        const n = NIVEL_LUZ[m.clase];
+        return `<div class="fila-luz">
+          <span class="ico-mini">${iconoEstado('luz', n.nivel, 22)}</span>
+          <span class="nom">${escapar(m.nombre)}</span>
+          <span class="cambio">${m.cambio_pct}%</span>
+          ${m.confianza === 'baja' ? '<span class="frag">frágil</span>' : ''}
+        </div>`;
+      }).join('')
+    : '<p class="hint">Ningún municipio del catálogo perdió luz de forma apreciable.</p>') +
+    (ciegos.length
+      ? `<p class="hint">Sin poder medir: ${ciegos.map((m) => escapar(m.nombre)).join(', ')}.</p>`
+      : '') +
+    `<p class="hint">${escapar(d.limites[0])}</p>`;
 }
 
 // ── Panel: estado por operador ──────────────────────────────────────────────
@@ -1901,7 +2088,8 @@ function activarModoAgregar(activo) {
 
 function construirControlCapas() {
   const defs = [
-    ['pulso',      'Estado de red AHORA',      '#ff9f0a'],
+    ['pulso',      'Sin internet (por zona)',  '#e03131'],
+    ['luzMun',     'Sin luz (por municipio)',  '#f59f00'],
     ['luces',      'Luces nocturnas (VIIRS)',  '#ffd60a'],
     ['zonas',      'Zonas reportadas',         '#ff3b30'],
     ['aportes',    'Recursos ofrecidos',       '#34c759'],
@@ -1950,10 +2138,29 @@ function construirLeyenda() {
     });
   };
 
-  // Corte de internet: iconos en vez de solo color — mismo lenguaje que el mapa.
+  // Los iconos del mapa, primeros y con el mismo dibujo exacto que se ve allí.
+  // Una leyenda que redibuja el símbolo «parecido» no sirve para consultarla.
+  const hEs = document.createElement('div');
+  hEs.className = 'leyenda-titulo';
+  hEs.textContent = 'Iconos del mapa';
+  cont.appendChild(hEs);
+  [
+    ['luz', 'sin',  'Sin luz — el pueblo perdió buena parte de su luz nocturna'],
+    ['luz', 'poca', 'Poca luz — perdió una parte, apagón parcial o por sectores'],
+    ['red', 'sin',  'Sin internet — la zona está muy por debajo de su normal'],
+    ['red', 'poca', 'Poco internet — algo por debajo de su normal'],
+    ['red', 'duda', 'No se sabe — no hay suficiente red o luz que medir aquí'],
+  ].forEach(([tipo, nivel, txt]) => {
+    const d = document.createElement('div');
+    d.className = 'leyenda-fila';
+    d.innerHTML = `<span class="muestra glifo">${iconoEstado(tipo, nivel, 22)}</span>` +
+                  `<span>${txt}</span>`;
+    cont.appendChild(d);
+  });
+
   const hIn = document.createElement('div');
   hIn.className = 'leyenda-titulo';
-  hIn.textContent = 'Corte de internet (círculo = escala log del score)';
+  hIn.textContent = 'Clases del score acumulado (panel de datos técnicos)';
   cont.appendChild(hIn);
   [
     ['ok',    CLASES_CORTE.sin_senal.color,        'Con servicio — sin corte detectado'],
