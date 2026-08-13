@@ -232,7 +232,6 @@ function crearMapa() {
     intensidad: L.layerGroup(),
     anillos:    L.layerGroup(),
     pulso:      L.layerGroup(),
-    cortes:     L.layerGroup(),
     energia:    L.layerGroup(),
     replicas:   L.layerGroup(),
     ciudades:   L.layerGroup(),
@@ -1225,7 +1224,6 @@ async function cargarRadarCF() {
 // simplemente no se dibujan y se dice por qué.
 
 async function cargarCortes() {
-  S.capas.cortes.clearLayers();
   S.capas.energia.clearLayers();
   $('#prioridad').innerHTML = '<p class="hint">Consultando IODA y XM…</p>';
   $('#energia-resumen').innerHTML = '';
@@ -1235,7 +1233,6 @@ async function cargarCortes() {
     $('#prioridad').innerHTML =
       '<p class="hint">Estas capas necesitan el backend. Levanta ' +
       '<code>uvicorn backend.main:app --port 8000</code> y recarga.</p>';
-    actualizarCuenta('cortes', '—');
     actualizarCuenta('energia', '—');
     return;
   }
@@ -1247,23 +1244,13 @@ async function cargarCortes() {
       cargarJSON(`${Almacen.base}/cortes/energia?dias=20`).catch(() => null),
     ]);
     S.prioridad = prio;
-    pintarCapaCortes(prio);
     pintarPanelPrioridad(prio);
     if (energia) { pintarCapaEnergia(energia); pintarPanelEnergia(energia); }
     else { actualizarCuenta('energia', '—'); }
   } catch (e) {
     $('#prioridad').innerHTML =
       `<p class="hint err">No se pudieron leer las fuentes: ${escapar(e.message)}</p>`;
-    actualizarCuenta('cortes', '—');
   }
-}
-
-/** Radio proporcional al score. El score de IODA abarca 9 órdenes de magnitud
- *  (de 55 a 11.900 millones), así que se usa escala logarítmica: lineal haría
- *  que todo menos Valle del Cauca fuera un punto invisible. */
-function radioCorte(score) {
-  if (!score || score <= 0) return 9;
-  return Math.max(9, Math.min(46, 7 + Math.log10(score) * 4.2));
 }
 
 // ── Iconos pedagógicos (SVG en línea, sin depender de fuentes externas) ────
@@ -1301,95 +1288,48 @@ function svgRayoCorte(color) {
   </svg>`;
 }
 
-function iconoGlifo(svgHtml, px) {
-  return L.divIcon({
-    className: 'icono-glifo',
-    html: `<div class="glifo-fondo">${svgHtml}</div>`,
-    iconSize: [px, px],
-    iconAnchor: [px / 2, px / 2],
-  });
-}
 
-function pintarCapaCortes(prio) {
-  prio.zonas.forEach((z) => {
-    const c = CLASES_CORTE[z.clase] || CLASES_CORTE.sin_senal;
-    const ciego = z.clase === 'punto_ciego';
-    const cortado = z.clase === 'colapso_medido' || z.clase === 'degradacion_fuerte' ||
-                    z.clase === 'degradacion_leve';
 
-    L.circleMarker([z.lat, z.lon], {
-      radius: radioCorte(z.score),
-      color: c.color,
-      weight: ciego ? 3 : 2,
-      // El punto ciego va con borde punteado y relleno casi nulo: la forma
-      // dice "aquí no estamos midiendo", no "aquí no pasa nada".
-      dashArray: ciego ? '5 4' : null,
-      fillColor: c.color,
-      fillOpacity: ciego ? 0.06 : 0.28,
-    }).bindPopup(popupCorte(z), { maxWidth: 330 })
-      .on('popupopen', () => {
-        const b = document.getElementById('ev-' + z.codigo);
-        if (b) b.onclick = () => verEventosCorte(z.codigo);
-      })
-      .addTo(S.capas.cortes);
 
-    // Icono encima del círculo: wifi normal, tachado o con "?". No es
-    // interactivo — el clic y el popup siguen siendo del círculo de abajo.
-    L.marker([z.lat, z.lon], {
-      icon: iconoGlifo(svgWifi(c.color, ciego ? 'duda' : cortado ? 'corte' : 'ok'), 20),
-      interactive: false,
-      keyboard: false,
-    }).addTo(S.capas.cortes);
-  });
-  actualizarCuenta('cortes', prio.zonas.length);
-}
-
-function popupCorte(z) {
-  const c = CLASES_CORTE[z.clase] || CLASES_CORTE.sin_senal;
-  const en = z.energia;
-  return `
-    <h3>${escapar(z.nombre)}</h3>
-    <div style="color:${c.color};font-weight:600">${escapar(c.etiqueta)}</div>
-    <div class="hint">Promedio de TODO el departamento — no indica el
-      municipio o barrio exacto. Para puntos concretos, ver capa «Sondas de
-      red (RIPE Atlas)».</div>
-    <dl>
-      <dt>Score IODA</dt><dd>${z.score ? nf.format(Math.round(z.score)) : '0'}</dd>
-      <dt>Eventos de corte</dt><dd>${z.eventos}</dd>
-      ${z.afectado_sismo ? '<dt>Sismo</dt><dd>daño reportado</dd>' : ''}
-      ${en ? `<dt>Energía no entregada</dt><dd>${nf.format(Math.round(en.pico_kwh))} kWh</dd>
-              <dt>Sobre su línea base</dt><dd>${en.veces_sobre_base ? '×' + en.veces_sobre_base : 's/d'}</dd>` : ''}
-    </dl>
-    <div style="margin-top:8px">${escapar(z.lectura)}</div>
-    <button class="btn btn-sec" id="ev-${z.codigo}">Ver eventos con hora</button>
-  `;
-}
-
-function pintarCapaEnergia(energia) {
+/* Las áreas de XM tampoco son un punto. «AREA SUROCCIDENTAL» es una porción de
+   la topología eléctrica que cubre Valle, Cauca y Nariño enteros; dibujar un
+   rayo en unas coordenadas inventadas decía «el apagón fue aquí», que es
+   falso. Se pinta como la suma de los departamentos que cubre, con la
+   advertencia de que el borde eléctrico no coincide con el político. */
+async function pintarCapaEnergia(energia) {
+  const limites = await cargarLimites();
+  S.capas.energia.clearLayers();
   let n = 0;
+
   energia.areas.forEach((a) => {
-    if (!a.lat || !a.pico_kwh) return;
-    // Rayo tachado: mismo lenguaje visual que "sin internet", para energía.
-    const lado = Math.max(18, Math.min(40, Math.log10(a.pico_kwh) * 5 + 6));
-    L.marker([a.lat, a.lon], {
-      icon: L.divIcon({
-        className: 'marca-energia',
-        html: `<div class="glifo-fondo">${svgRayoCorte('#00d4ff')}</div>`,
-        iconSize: [lado, lado],
-        iconAnchor: [lado / 2, lado / 2],
-      }),
-    }).bindPopup(`
-      <h3>${escapar(a.area)}</h3>
+    if (!a.pico_kwh) return;
+    const formas = (a.codigos || []).map((c) => limites.get(c)).filter(Boolean);
+    if (!formas.length) return;
+
+    const ficha = `
+      <h3>${escapar(a.area.replace('AREA ', 'Área '))}</h3>
       <dl>
         <dt>Pico sin entregar</dt><dd>${nf.format(Math.round(a.pico_kwh))} kWh</dd>
         <dt>Fecha del pico</dt><dd>${escapar(a.pico_fecha || 's/d')}</dd>
-        <dt>Línea base diaria</dt><dd>${nf.format(Math.round(a.linea_base_kwh))} kWh</dd>
-        <dt>Veces sobre la base</dt><dd>${a.veces_sobre_base ? '×' + a.veces_sobre_base : 's/d'}</dd>
+        <dt>Su día normal</dt><dd>${nf.format(Math.round(a.linea_base_kwh))} kWh</dd>
+        <dt>Veces sobre lo normal</dt><dd>${a.veces_sobre_base ? '×' + a.veces_sobre_base : 's/d'}</dd>
       </dl>
-      <div style="margin-top:8px">Cubre: ${escapar(a.departamentos.join(', ') || 's/d')}</div>
-      <span class="no-verificado">Área operativa de XM, no división política.
-        No atribuir el corte a un municipio concreto.</span>
-    `, { maxWidth: 320 }).addTo(S.capas.energia);
+      <div class="hint" style="margin-top:8px">Esta es un <b>área eléctrica</b> de
+        XM, no una división política: su borde real no coincide con el de los
+        departamentos que se ven pintados. El dato tampoco dice en qué municipio
+        se fue la luz, ni si sigue sin ella — es de ${escapar(a.pico_fecha || 's/d')}.</div>`;
+
+    L.geoJSON(formas, {
+      style: {
+        color: '#00d4ff', weight: 1.5, opacity: 0.8,
+        dashArray: '3 4',            // borde punteado: el límite es aproximado
+        fillColor: '#00d4ff', fillOpacity: 0.09,
+      },
+    }).bindTooltip(`<b>${escapar(a.area.replace('AREA ', 'Área '))}</b><br>` +
+                   `${nf.format(Math.round(a.pico_kwh))} kWh sin entregar`,
+                   { sticky: true })
+      .bindPopup(ficha, { maxWidth: 320 })
+      .addTo(S.capas.energia);
     n++;
   });
   actualizarCuenta('energia', n);
@@ -1415,11 +1355,12 @@ function pintarPanelPrioridad(prio) {
         ${z.energia && z.energia.veces_sobre_base
           ? `<span class="met">luz ×${z.energia.veces_sobre_base}</span>` : ''}
       </div>`;
+    // Ya no hay una capa propia que abrir: se enfoca el polígono del pulso,
+    // que es la representación geográfica única del estado de internet.
     fila.onclick = () => {
-      S.mapa.setView([z.lat, z.lon], 8);
-      S.capas.cortes.eachLayer((l) => {
-        if (l.getLatLng && Math.abs(l.getLatLng().lat - z.lat) < 1e-9) l.openPopup();
-      });
+      const capa = S.poligonos && S.poligonos.get(z.codigo);
+      if (capa) S.mapa.fitBounds(capa.getBounds(), { padding: [30, 30] });
+      verEventosCorte(z.codigo);
     };
     cont.appendChild(fila);
   });
@@ -1965,7 +1906,6 @@ function construirControlCapas() {
     ['zonas',      'Zonas reportadas',         '#ff3b30'],
     ['aportes',    'Recursos ofrecidos',       '#34c759'],
     ['reportes',   'Apuntes internos',         '#4da3ff'],
-    ['cortes',     'Corte acumulado (IODA)',   '#c77dff'],
     ['energia',    'Energía no entregada (XM)','#00d4ff'],
     ['epicentro',  'Epicentro',                '#ff3b30'],
     ['replicas',   'Réplicas (USGS)',          '#ffd60a'],

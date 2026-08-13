@@ -352,6 +352,10 @@ def xm_no_atendida(desde: date, hasta: date) -> dict:
             "area": nombre,
             "lat": geo.get("lat"),
             "lon": geo.get("lon"),
+            # Los códigos van junto a los nombres para que el mapa pueda pintar
+            # el área como la suma de sus departamentos. Un área de XM no tiene
+            # un punto: es topología eléctrica, no un lugar.
+            "codigos": geo.get("deptos", []),
             "departamentos": [DEPARTAMENTOS[d]["nombre"]
                               for d in geo.get("deptos", []) if d in DEPARTAMENTOS],
             "serie_kwh": serie,
