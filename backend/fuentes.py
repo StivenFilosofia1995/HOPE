@@ -1,10 +1,10 @@
 """
-HOPE — conectores a fuentes REALES de corte de internet y energía.
+HOPE — conectores a fuentes REALES: cortes de internet/energía, sismicidad y clima.
 
 Ninguna función de este módulo inventa, simula ni interpola datos. Si una fuente
 no responde, se devuelve el error; no se rellena con estimaciones.
 
-Fuentes (ambas públicas, sin llave de API, verificadas el 2026-08-12):
+Fuentes (todas públicas, sin llave de API, verificadas el 2026-08-12):
 
   IODA — Internet Outage Detection and Analysis, Georgia Tech.
     https://api.ioda.inetintel.cc.gatech.edu/v2/
@@ -19,6 +19,15 @@ Fuentes (ambas públicas, sin llave de API, verificadas el 2026-08-12):
     Métrica DemaNoAtenNoProg = energía que se debió entregar y no se entregó,
     por área operativa, en kWh/día. Un apagón deja rastro aquí.
     Rezago observado: ~1 día.
+
+  USGS — catálogo sísmico global, ventana rodante sobre Colombia.
+    https://earthquake.usgs.gov/fdsnws/event/1/query
+    Detecta sismos nuevos, no solo réplicas del evento del 10 de agosto.
+
+  Open-Meteo — pronóstico meteorológico abierto.
+    https://api.open-meteo.com/v1/forecast
+    Precipitación en los departamentos con daño reportado: lluvia intensa
+    complica el acceso vial a zonas ya golpeadas por el sismo.
 
 Advertencia de interpretación, importante:
   Una señal DÉBIL de corte no significa "esa zona está bien". Puede significar
@@ -403,3 +412,111 @@ def prioridad_enlaces(desde: int, hasta: int) -> dict:
 def ventana_horas(horas: int = 96) -> tuple[int, int]:
     ahora = int(time.time())
     return ahora - horas * 3600, ahora
+
+
+# ── USGS: sismicidad reciente en Colombia (monitoreo continuo) ─────────────
+#
+# Distinta de las "réplicas" que pinta el frontend directo desde el navegador
+# (esas miran solo alrededor del epicentro, desde el 10 de agosto). Esta es una
+# ventana rodante sobre todo el país: sirve para detectar un sismo NUEVO, no
+# necesariamente relacionado con el del Chocó.
+
+USGS = "https://earthquake.usgs.gov/fdsnws/event/1/query"
+BBOX_COLOMBIA = {"minlat": -1.5, "maxlat": 13.5, "minlon": -82.0, "maxlon": -66.0}
+
+
+def usgs_sismos_recientes(dias: int = 7, mag_min: float = 3.0) -> dict:
+    """Sismos recientes en Colombia y su zona de influencia, catálogo USGS."""
+    clave = f"usgs_recientes:{dias}:{mag_min}"
+    if (c := _cache_leer(clave)) is not None:
+        return c
+
+    hasta = datetime.now(timezone.utc)
+    desde = hasta - timedelta(days=dias)
+    b = BBOX_COLOMBIA
+    url = (f"{USGS}?format=geojson&starttime={desde:%Y-%m-%d}&endtime={hasta:%Y-%m-%d}"
+           f"&minlatitude={b['minlat']}&maxlatitude={b['maxlat']}"
+           f"&minlongitude={b['minlon']}&maxlongitude={b['maxlon']}"
+           f"&minmagnitude={mag_min}&orderby=time")
+    gj = _get(url)
+
+    sismos = []
+    for f in gj.get("features", []):
+        p = f.get("properties", {}) or {}
+        lon, lat, prof = f.get("geometry", {}).get("coordinates", [None, None, None])
+        t = p.get("time")
+        sismos.append({
+            "id": f.get("id"),
+            "lat": lat, "lon": lon, "profundidad_km": prof,
+            "magnitud": p.get("mag"),
+            "lugar": p.get("place"),
+            "hora_ms": t,
+            "hora_iso": (datetime.fromtimestamp(t / 1000, timezone.utc).isoformat()
+                        if t else None),
+            "alerta": p.get("alert"),
+            "url": p.get("url"),
+        })
+    sismos.sort(key=lambda x: -(x["hora_ms"] or 0))
+
+    res = {
+        "fuente": "USGS (catálogo global, ventana rodante sobre Colombia)",
+        "dias": dias, "mag_min": mag_min,
+        "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "total": len(sismos),
+        "sismos": sismos,
+    }
+    _cache_guardar(clave, res)
+    return res
+
+
+# ── Open-Meteo: clima en zonas con daño reportado ───────────────────────────
+#
+# Lluvia intensa complica el acceso vial a zonas ya golpeadas por el sismo: es
+# dato operativo para decidir prioridad de vías, no solo contexto ambiental.
+# API pública, sin llave, datos de modelos meteorológicos abiertos.
+
+OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
+
+
+def clima_zonas_afectadas() -> dict:
+    """Precipitación actual y probabilidad a 24 h en los departamentos con
+    daño reportado por el sismo (`AFECTADOS_SISMO`)."""
+    clave = "clima_zonas_afectadas"
+    if (c := _cache_leer(clave)) is not None:
+        return c
+
+    zonas = []
+    for codigo in sorted(AFECTADOS_SISMO):
+        meta = DEPARTAMENTOS[codigo]
+        url = (f"{OPEN_METEO}?latitude={meta['lat']}&longitude={meta['lon']}"
+               f"&current=precipitation,rain,weather_code"
+               f"&hourly=precipitation_probability,precipitation"
+               f"&forecast_days=2&timezone=America%2FBogota")
+        try:
+            r = _get(url)
+            cur = r.get("current", {}) or {}
+            hor = r.get("hourly", {}) or {}
+            probs = [p for p in (hor.get("precipitation_probability") or [])[:24] if p is not None]
+            precs = [p for p in (hor.get("precipitation") or [])[:24] if p is not None]
+            zonas.append({
+                "codigo": codigo, "nombre": meta["nombre"],
+                "lat": meta["lat"], "lon": meta["lon"],
+                "precipitacion_actual_mm": cur.get("precipitation"),
+                "codigo_clima": cur.get("weather_code"),
+                "prob_lluvia_24h_max": max(probs) if probs else None,
+                "lluvia_acumulada_24h_mm": round(sum(precs), 1) if precs else None,
+            })
+        except Exception as e:
+            zonas.append({"codigo": codigo, "nombre": meta["nombre"],
+                         "lat": meta["lat"], "lon": meta["lon"],
+                         "error": f"{type(e).__name__}: {e}"})
+
+    res = {
+        "fuente": "Open-Meteo",
+        "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "nota": "Lluvia intensa dificulta el acceso vial a zonas ya golpeadas por "
+                "el sismo. No es alerta oficial de IDEAM: es pronóstico de modelo abierto.",
+        "zonas": zonas,
+    }
+    _cache_guardar(clave, res)
+    return res

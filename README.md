@@ -103,8 +103,15 @@ python backend/main.py --sembrar
 | Contornos de intensidad (MMI) | ShakeMap del USGS, **en vivo** | Resuelve la versión vigente del producto |
 | **Corte de internet** | **IODA (Georgia Tech), en vivo** | Por departamento. Requiere backend |
 | **Energía no entregada** | **XM (SIN Colombia), en vivo** | Por área operativa. Requiere backend |
+| **Sismos recientes** | **USGS, en vivo** | Ventana rodante sobre Colombia, no solo réplicas. Requiere backend |
+| **Clima en zonas afectadas** | **Open-Meteo, en vivo** | Precipitación por departamento golpeado. Requiere backend |
 | Ciudades de referencia | `web/data/ciudades.json` | Distancia al epicentro calculada |
 | Reportes | SQLite o localStorage | Capa editable |
+| Zonas / aportes | Supabase | **Tiempo real por WebSocket** (Supabase Realtime) |
+
+Las capas que dependen del backend (cortes, energía, sismos recientes, clima)
+se refrescan solas cada 5 minutos mientras el mapa está abierto — no hace falta
+recargar la página. Zonas y aportes ya llegan por WebSocket sin polling.
 
 ---
 
@@ -124,6 +131,15 @@ departamento — no hay municipios.**
 Métrica `DemaNoAtenNoProg`: energía que se debió entregar y no se entregó, en
 kWh/día por área operativa. Un apagón deja rastro aquí. Rezago ~1 día.
 (Ojo: la métrica horaria `DemaReal` sí tiene ~3 días de rezago.)
+
+**USGS** — catálogo sísmico global, `GET /api/sismos/recientes`.
+Ventana rodante (por defecto 7 días, M≥3) sobre todo el país — distinta de la
+capa de réplicas, que solo mira alrededor del epicentro desde el 10 de agosto.
+
+**Open-Meteo** — pronóstico abierto, `GET /api/clima`.
+Precipitación actual y probabilidad a 24 h en los departamentos con daño
+reportado. Lluvia intensa complica el acceso vial a zonas ya golpeadas. No
+reemplaza una alerta oficial del IDEAM.
 
 ### Lo que midieron
 

@@ -17,6 +17,7 @@
   <header class="panel-head">
     <h1>HOPE <span class="sub">mapa abierto</span></h1>
     <span id="badge-vivo" class="badge">conectando…</span>
+    <span id="ultima-actualizacion" class="hint" style="margin:0"></span>
     <button id="btn-plegar" title="Plegar panel">‹</button>
   </header>
 
@@ -77,6 +78,25 @@
       <div id="prioridad" class="prioridad"></div>
       <div id="energia-resumen" class="energia"></div>
       <p class="hint" id="cortes-nota"></p>
+    </section>
+
+    <!-- ═══ Sismos recientes (monitoreo continuo, USGS) ═══ -->
+    <section class="bloque">
+      <h2>Sismos recientes</h2>
+      <p class="hint">Ventana rodante sobre todo el país — no solo réplicas de
+        este evento. Catálogo <strong>USGS</strong>, en vivo.</p>
+      <div id="sismos-recientes" class="prioridad"></div>
+      <p class="hint" id="sismos-nota"></p>
+    </section>
+
+    <!-- ═══ Clima en zonas afectadas ═══ -->
+    <section class="bloque">
+      <h2>Clima en zonas afectadas</h2>
+      <p class="hint">Lluvia intensa complica el acceso vial a zonas ya
+        golpeadas por el sismo. Pronóstico abierto <strong>Open-Meteo</strong>,
+        no es alerta oficial del IDEAM.</p>
+      <div id="clima-zonas" class="energia"></div>
+      <p class="hint" id="clima-nota"></p>
     </section>
 
     <!-- ═══ Capas ═══ -->

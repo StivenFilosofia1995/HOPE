@@ -135,9 +135,37 @@ async function iniciar() {
   await Almacen.iniciar();
   await recargarReportes();
   cargarCortes();          // depende de Almacen: sabe si hay backend o no
+  cargarSismosRecientes(); // idem
+  cargarClima();           // idem
 
   conectarUIZonas();
   iniciarZonas();          // Supabase: zonas y aportes en tiempo real
+
+  iniciarAutoRefresco();
+}
+
+// ── Auto-refresco: mantiene alimentadas las capas que no son push (Supabase
+// ya empuja zonas/aportes solo). Cada RITMO_MS se vuelve a pedir a las fuentes
+// en vivo; nada se inventa entre medias.
+
+const RITMO_MS = 5 * 60 * 1000;
+
+function iniciarAutoRefresco() {
+  marcarActualizado();
+  setInterval(async () => {
+    await Promise.allSettled([
+      cargarReplicas(),
+      cargarCortes(),
+      cargarSismosRecientes(),
+      cargarClima(),
+    ]);
+    marcarActualizado();
+  }, RITMO_MS);
+}
+
+function marcarActualizado() {
+  const el = $('#ultima-actualizacion');
+  if (el) el.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 }
 
 // ── Mapa y capas base ───────────────────────────────────────────────────────
@@ -182,6 +210,7 @@ function crearMapa() {
     zonas:      L.layerGroup(),
     aportes:    L.layerGroup(),
     reportes:   L.layerGroup(),
+    sismos:     L.layerGroup(),
   };
   // El orden de adición define el apilamiento: lo que la gente reporta va
   // arriba de todo, porque es lo que se viene a mirar.
@@ -381,6 +410,107 @@ function descripcionMMI(v) {
     1: 'no sentido', 2: 'muy débil', 3: 'débil', 4: 'ligero', 5: 'moderado',
     6: 'fuerte', 7: 'muy fuerte', 8: 'severo', 9: 'violento', 10: 'extremo',
   })[n] || 's/d';
+}
+
+// ── Capa: sismicidad reciente en Colombia (USGS, ventana rodante) ───────────
+//
+// Distinta de "réplicas": esa mira fijo alrededor del epicentro desde el 10 de
+// agosto. Esta ventana se mueve con el reloj y cubre todo el país, así que
+// puede avisar de un sismo nuevo sin relación con el del Chocó. Pasa por el
+// backend para compartir caché entre pestañas, igual que cortes/energía.
+
+async function cargarSismosRecientes() {
+  S.capas.sismos.clearLayers();
+  if (Almacen.modo !== 'api') {
+    $('#sismos-recientes').innerHTML =
+      '<p class="hint">Necesita el backend para consultar el catálogo USGS con caché compartida.</p>';
+    actualizarCuenta('sismos', '—');
+    return;
+  }
+  try {
+    const d = await cargarJSON(`${Almacen.base}/sismos/recientes?dias=7&mag_min=3`);
+    d.sismos.forEach((s) => {
+      if (s.lat == null || s.lon == null) return;
+      L.circleMarker([s.lat, s.lon], {
+        radius: Math.max(4, (s.magnitud || 3) * 2),
+        color: '#ff6b6b', weight: 1.5, opacity: 0.85,
+        fillColor: '#ff6b6b', fillOpacity: 0.3,
+      }).bindPopup(`
+        <h3>M${(s.magnitud ?? 0).toFixed(1)}</h3>
+        <div>${escapar(s.lugar || '')}</div>
+        <dl>
+          <dt>Hora local</dt><dd>${fechaLocal(s.hora_iso)}</dd>
+          <dt>Profundidad</dt><dd>${s.profundidad_km != null ? s.profundidad_km.toFixed(1) + ' km' : 's/d'}</dd>
+        </dl>
+        ${s.url ? `<a class="btn btn-sec" href="${s.url}" target="_blank" rel="noopener">Ficha USGS</a>` : ''}
+      `).addTo(S.capas.sismos);
+    });
+    actualizarCuenta('sismos', d.total);
+    pintarPanelSismos(d);
+  } catch (e) {
+    actualizarCuenta('sismos', '—');
+    $('#sismos-nota').textContent = 'No se pudo consultar USGS: ' + e.message;
+  }
+}
+
+function pintarPanelSismos(d) {
+  const cont = $('#sismos-recientes');
+  cont.innerHTML = '';
+  if (!d.sismos.length) {
+    cont.innerHTML = '<p class="hint">Sin sismos M≥' + d.mag_min + ' en los últimos ' + d.dias + ' días.</p>';
+  }
+  d.sismos.slice(0, 6).forEach((s) => {
+    const fila = document.createElement('div');
+    fila.className = 'zona';
+    fila.innerHTML = `
+      <div class="fila">
+        <span class="tit">M${(s.magnitud ?? 0).toFixed(1)} — ${escapar(s.lugar || 's/d')}</span>
+      </div>
+      <div class="fila"><span class="met">${fechaLocal(s.hora_iso)}</span></div>`;
+    fila.onclick = () => { if (s.lat != null) S.mapa.setView([s.lat, s.lon], 8); };
+    cont.appendChild(fila);
+  });
+  $('#sismos-nota').textContent =
+    `${d.fuente} · consultado ${fechaCorta(d.consultado)}.`;
+}
+
+// ── Panel: clima en zonas afectadas (Open-Meteo) ────────────────────────────
+//
+// No es una capa geoespacial nueva en el mapa: es contexto operativo (lluvia
+// dificulta el acceso vial). Se muestra como panel, igual que energía.
+
+async function cargarClima() {
+  if (Almacen.modo !== 'api') {
+    $('#clima-zonas').innerHTML =
+      '<p class="hint">Necesita el backend para consultar Open-Meteo con caché compartida.</p>';
+    return;
+  }
+  try {
+    const d = await cargarJSON(`${Almacen.base}/clima`);
+    pintarPanelClima(d);
+  } catch (e) {
+    $('#clima-nota').textContent = 'No se pudo consultar Open-Meteo: ' + e.message;
+  }
+}
+
+function pintarPanelClima(d) {
+  const cont = $('#clima-zonas');
+  cont.innerHTML = d.zonas.map((z) => {
+    if (z.error) {
+      return `<div class="leyenda-fila"><span>${escapar(z.nombre)}</span>
+              <span style="margin-left:auto;color:var(--texto-2)">s/d</span></div>`;
+    }
+    const prob = z.prob_lluvia_24h_max ?? 0;
+    const color = prob >= 70 ? 'var(--critica)' : prob >= 40 ? 'var(--alta)' : 'var(--texto-2)';
+    return `<div class="leyenda-fila">
+      <span>${escapar(z.nombre)}</span>
+      <span style="margin-left:auto;font-variant-numeric:tabular-nums">
+        ${z.precipitacion_actual_mm ?? 0} mm ahora
+        <b style="color:${color}">· ${prob}% prob. 24h</b>
+      </span>
+    </div>`;
+  }).join('');
+  $('#clima-nota').textContent = `${d.fuente} · consultado ${fechaCorta(d.consultado)}. ${d.nota}`;
 }
 
 // ── Capas: cortes de internet (IODA) y de energía (XM) ──────────────────────
@@ -1025,6 +1155,7 @@ function construirControlCapas() {
     ['energia',    'Energía no entregada (XM)','#00d4ff'],
     ['epicentro',  'Epicentro',                '#ff3b30'],
     ['replicas',   'Réplicas (USGS)',          '#ffd60a'],
+    ['sismos',     'Sismos recientes (USGS)',  '#ff6b6b'],
     ['intensidad', 'Intensidad ShakeMap',      '#ff9100'],
     ['ciudades',   'Ciudades de referencia',   '#5ac8fa'],
     ['anillos',    'Anillos de distancia',     '#ff3b30'],

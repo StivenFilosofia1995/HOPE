@@ -435,6 +435,33 @@ def cortes_prioridad(horas: int = Query(96, ge=1, le=720)) -> dict:
         raise HTTPException(502, f"Fuentes no disponibles: {type(e).__name__}: {e}")
 
 
+@app.get("/api/sismos/recientes", tags=["sismos"])
+def sismos_recientes(
+    dias: int = Query(7, ge=1, le=30),
+    mag_min: float = Query(3.0, ge=0, le=10),
+) -> dict:
+    """Sismos recientes en Colombia (catálogo USGS, ventana rodante).
+
+    No es la capa de réplicas del mapa (esa mira fijo desde el 10 de agosto
+    alrededor del epicentro): esta ventana se mueve con el tiempo y cubre todo
+    el país, para detectar un sismo nuevo aunque no sea réplica de este.
+    """
+    try:
+        return fuentes.usgs_sismos_recientes(dias, mag_min)
+    except Exception as e:
+        raise HTTPException(502, f"USGS no respondió: {type(e).__name__}: {e}")
+
+
+@app.get("/api/clima", tags=["clima"])
+def clima() -> dict:
+    """Precipitación actual y a 24 h en departamentos con daño reportado
+    (Open-Meteo). Lluvia intensa complica el acceso vial a zonas ya afectadas."""
+    try:
+        return fuentes.clima_zonas_afectadas()
+    except Exception as e:
+        raise HTTPException(502, f"Open-Meteo no respondió: {type(e).__name__}: {e}")
+
+
 @app.get("/api/config", tags=["sistema"])
 def config_publica() -> dict:
     """Configuración que el navegador necesita.
