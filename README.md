@@ -368,7 +368,7 @@ data/hope.db            Local, se crea sola. No versionar: tiene datos personale
 
 | Método | Ruta | |
 |---|---|---|
-| `GET` | `/api/mapa/municipios?mmi_min=4` | **Los 586 municipios afectados agrupados por departamento**, todos nombrados |
+| `GET` | `/api/mapa/municipios?mmi_min=4` | **Los 953 municipios de los 20 departamentos afectados**, agrupados y todos nombrados |
 | `GET` | `/api/mapa/municipios.csv?mmi_min=4` | La misma tabla en CSV, para adjuntar a una petición |
 | `GET` | `/api/mapa/lugares?mmi_min=4` | Lo mismo sin agrupar, como lista plana para el mapa |
 
@@ -378,9 +378,14 @@ cualquier punto, y con PAGER, que aporta el casco urbano y la población. Un
 alcalde o un CMGRD trabajan por municipio: una lista que dice «Pie de Pato»
 cuando el municipio se llama Alto Baudó no le sirve a quien firma el despacho.
 
-Van **todos** los municipios, incluidos los que están sin novedad: una lista de
-la que faltan municipios no sustenta nada, porque quien la recibe no puede
-distinguir «no está» de «está bien».
+Van **todos** los municipios de cada departamento afectado: los 586 con
+sacudida modelada, y los 367 que quedan fuera del área que el USGS modeló,
+marcados como tales. Chocó sale con sus 30 completos —Acandí y Unguía incluidos.
+
+Una lista incompleta no sustenta nada: un alcalde que no encuentra su municipio
+no puede distinguir «no está porque no le pasó nada» de «no está porque se les
+olvidó». Un renglón que dice «fuera del área» responde esa pregunta; una
+ausencia, no.
 
 De ahí sale la categoría que faltaba y que es la más accionable: el **punto
 ciego**, un municipio que tembló fuerte y del que no existe ninguna medición

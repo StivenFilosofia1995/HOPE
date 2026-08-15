@@ -25,9 +25,11 @@ const CLASE = {
   punto_ciego:        { et: 'Nadie lo ha medido', color: '#9c36b5' },
   solo_heredado:      { et: 'Solo el promedio del depto.', color: '#748ffc' },
   medido_sin_novedad: { et: 'Medido, sin novedad', color: '#2f9e44' },
+  fuera_del_area:     { et: 'Fuera del área sacudida', color: '#495057' },
 };
 
 const CERTEZA = {
+  no_aplica: { et: '—', tit: 'El USGS no modeló sacudida aquí: no hay nada que medir' },
   local:    { et: 'local',    tit: 'Se midió en este municipio' },
   heredada: { et: 'heredada', tit: 'Solo se conoce el promedio de su departamento' },
   ninguna:  { et: 'ninguna',  tit: 'Nadie lo ha medido' },
@@ -92,7 +94,7 @@ async function cargar() {
 function pintarResumen(d) {
   const r = d.resumen;
   const cifras = [
-    ['', r.lugares, 'municipios afectados'],
+    ['', r.lugares, 'municipios con sacudida modelada'],
     ['', r.departamentos, 'departamentos'],
     ['alarma', r.puntos_ciegos, 'sin <b>ninguna</b> medición'],
     ['alarma', r.poblacion_en_puntos_ciegos, 'personas en esos municipios'],
@@ -175,6 +177,7 @@ function tarjetaDepto(g, munis, filtrado) {
       <h2>${escapar(g.departamento)}</h2>
       <div class="depto-cifras">
         <span><b>${g.total}</b> municipios</span>
+        <span><b>${g.con_sacudida}</b> con sacudida modelada</span>
         <span class="${g.por_atender ? 'aten' : ''}"><b>${g.por_atender}</b> por atender</span>
         <span><b>${nf.format(g.poblacion)}</b> hab. en cabeceras</span>
         <span>máx. <b>MMI ${g.mmi_max.toFixed(1)}</b></span>
@@ -206,10 +209,13 @@ function filaMuni(m, g) {
   const red = m.red_departamento || {};
   const cert = CERTEZA[m.certeza] || {};
 
-  // Energía: se distingue «midió y está mal» de «no se pudo medir» y de «no
-  // hay dónde medir». Las tres cosas se ven distintas y significan distinto.
+  // Energía: se distingue «midió y está mal» de «no se pudo medir», de «no hay
+  // dónde medir» y de «no hay nada que medir porque aquí no tembló». Las cuatro
+  // se ven distintas porque significan cosas distintas.
   let energia;
-  if (luz.utilizable) {
+  if (m.clase === 'fuera_del_area') {
+    energia = '<span class="nd" title="El USGS no modeló sacudida aquí">—</span>';
+  } else if (luz.utilizable) {
     energia = luz.clase === 'sin_luz' || luz.clase === 'poca_luz'
       ? `<span class="mal">${luz.cambio_pct}%</span>`
       : `<span class="bien">${luz.cambio_pct > 0 ? '+' : ''}${luz.cambio_pct}%</span>`;
@@ -231,7 +237,7 @@ function filaMuni(m, g) {
     <td class="nom"><span class="punto" style="background:${c.color || '#666'}"
       title="${escapar(c.et || m.clase)}"></span>${nombre}</td>
     <td class="num">${m.poblacion ? nf.format(m.poblacion) : '—'}</td>
-    <td class="num">${m.mmi.toFixed(1)}</td>
+    <td class="num">${m.mmi === null ? '<span class="nd">—</span>' : m.mmi.toFixed(1)}</td>
     <td>${energia}</td>
     <td>${redTxt}</td>
     <td><span class="cert cert-${m.certeza}" title="${escapar(cert.tit || '')}">${escapar(cert.et || m.certeza)}</span></td>

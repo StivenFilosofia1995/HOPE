@@ -1887,6 +1887,9 @@ RANGO_LUGAR = {
     "punto_ciego": 3,
     "solo_heredado": 4,
     "medido_sin_novedad": 5,
+    # Va el último: no es un estado del municipio, es que queda fuera del área
+    # que el USGS modeló. Está en la lista para que se vea que está.
+    "fuera_del_area": 6,
 }
 
 ETIQUETA_LUGAR = {
@@ -1896,6 +1899,7 @@ ETIQUETA_LUGAR = {
     "punto_ciego": "Punto ciego: nadie lo ha medido",
     "solo_heredado": "Solo se sabe lo de su departamento",
     "medido_sin_novedad": "Medido, sin novedad",
+    "fuera_del_area": "Fuera del área sacudida",
 }
 
 NECESIDAD_TEXTO = {
@@ -2429,13 +2433,60 @@ def municipios_por_departamento(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
         if g["red"] is None and l.get("red_departamento"):
             g["red"] = l["red_departamento"]
 
+    # ── Completar cada departamento con TODOS sus municipios ────────────────
+    #
+    # Hasta aquí solo están los que el USGS modeló con sacudida. Chocó tiene 30
+    # municipios y salían 28: Acandí y Unguía, en el extremo norte, caen fuera
+    # de la rejilla del ShakeMap. En total faltaban 367 municipios repartidos
+    # por los 20 departamentos afectados.
+    #
+    # Se añaden, marcados. La razón no es cosmética: un alcalde que busca su
+    # municipio en esta lista y no lo encuentra no puede distinguir «no está
+    # porque no le pasó nada» de «no está porque se nos olvidó». Un renglón que
+    # dice «fuera del área que el USGS modeló» responde la pregunta; una
+    # ausencia, no. Y quien tiene que sustentar una petición necesita poder
+    # decir «están todos».
+    #
+    # No se les mide luz ni se les pinta en el mapa: no tienen nada que mostrar
+    # y llenarían la pantalla de ruido. Solo ocupan su renglón en la tabla.
+    afectados = set(grupos)
+    for m in municipios_catalogo():
+        dep = m.get("departamento") or ""
+        if dep not in afectados:
+            continue                      # departamento sin ningún municipio sacudido
+        g = grupos[dep]
+        if any(x["nombre"] == m["nombre"] for x in g["municipios"]):
+            continue
+        g["municipios"].append({
+            "nombre": m["nombre"],
+            "nombre_poblado": m.get("nombre_poblado") or "",
+            "lat": m["lat"], "lon": m["lon"],
+            "mmi": None,
+            "poblacion": m.get("poblacion") or 0,
+            "codigo_depto": m.get("depto"),
+            "departamento": dep,
+            "punto": m.get("punto", "centroide"),
+            "clase": "fuera_del_area",
+            "etiqueta": ETIQUETA_LUGAR["fuera_del_area"],
+            "certeza": "no_aplica",
+            "necesita": "",
+            "necesita_texto": "",
+            "luz": None,
+            "medible": False,
+            "red_local": None,
+            "red_departamento": g.get("red"),
+        })
+        g["por_clase"]["fuera_del_area"] = g["por_clase"].get("fuera_del_area", 0) + 1
+
     for g in grupos.values():
         g["municipios"].sort(key=lambda m: (RANGO_LUGAR.get(m["clase"], 9),
                                             -m["poblacion"], m["nombre"]))
         g["total"] = len(g["municipios"])
+        g["con_sacudida"] = sum(1 for m in g["municipios"] if m["mmi"] is not None)
         g["por_atender"] = sum(n for c, n in g["por_clase"].items()
                                if c in ("sin_luz_y_sin_red", "sin_luz",
                                         "sin_red", "punto_ciego"))
+        g["fuera_del_area"] = g["por_clase"].get("fuera_del_area", 0)
 
     # Primero el departamento con más municipios por atender; a igualdad, el que
     # más fuerte tembló. Es el orden en que alguien los llamaría por teléfono.
@@ -2452,13 +2503,13 @@ def municipios_por_departamento(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
         "como_leer": d["como_leer"],
         "advertencia": d["advertencia"],
         "nota_cobertura": (
-            "Van TODOS los municipios de cada departamento con sacudida "
-            "modelada por el USGS, incluidos los que están sin novedad. Una "
-            "lista de la que faltan municipios no sirve para sustentar una "
-            "petición: quien la reciba no puede distinguir «no está» de «está "
-            "bien». Los municipios fuera de la rejilla del ShakeMap no "
-            "aparecen porque allí el USGS no modeló sacudida, es decir, fue "
-            "despreciable."
+            "Van TODOS los municipios de cada departamento afectado: los "
+            "sacudidos, los que están sin novedad, y los que quedan fuera del "
+            "área que el USGS modeló —estos últimos marcados como tales. Una "
+            "lista incompleta no sirve para sustentar una petición: quien la "
+            "recibe no puede distinguir «no está porque no le pasó nada» de "
+            "«no está porque se les olvidó». Que un municipio salga con "
+            "«fuera del área» responde esa pregunta; que falte, no."
         ),
         "departamentos": orden,
     }
