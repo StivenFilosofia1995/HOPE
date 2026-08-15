@@ -115,6 +115,35 @@ body.pagina-enlaces {
 .btn-wa { background: #25a35a; border: 1px solid #2fbf6c; color: #fff; }
 .btn-wa:hover { background: #2fbf6c; }
 
+/* ── Aliados: quién más está en esto ─────────────────────── */
+.aliados { border-left: 3px solid #4dabf7; }
+
+.gdacs-caja {
+  background: var(--bg-3);
+  border: 1px solid var(--linea);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.gdacs-caja .hint { display: block; margin-top: 8px; }
+.gdacs-caja a { display: inline-block; margin-top: 8px; font-size: 12.5px; }
+.alerta-red    { color: var(--critica); }
+.alerta-orange { color: var(--alta); }
+.alerta-green  { color: var(--baja); }
+
+.pubs { list-style: none; margin: 12px 0 0; padding: 0; }
+.pubs li { padding: 9px 0; border-bottom: 1px solid var(--linea); }
+.pubs li:last-child { border-bottom: 0; }
+.pubs a { font-size: 13.5px; }
+.pubs .org { color: var(--texto-2); font-size: 11.5px; margin-top: 3px; }
+
+.no-disp { margin-top: 12px; }
+.no-disp summary { cursor: pointer; font-size: 12.5px; color: var(--texto-2); list-style: revert; }
+.no-disp ul { margin: 8px 0 0; padding-left: 20px; }
+.no-disp li { font-size: 12px; line-height: 1.55; color: var(--texto-2); margin-bottom: 6px; }
+
 /* ── Lo avanzado, plegado ────────────────────────────────── */
 .avanzado > summary {
   cursor: pointer;

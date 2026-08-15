@@ -83,6 +83,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
+# Cabecera de identificación. SIN TILDES a propósito: hasta el 2026-08-15 decía
+# "respuesta sismo Chocó", y GDACS respondía 403 a cualquier petición con ese
+# User-Agent. Un carácter no ASCII en una cabecera HTTP es territorio ambiguo y
+# cada servidor lo resuelve a su manera; el que lo rechaza no dice por qué, y
+# desde fuera se ve como si la fuente estuviera caída. No vale la pena una
+# tilde en un sitio que nadie lee.
+AGENTE = "HOPE/0.4 (respuesta sismo Choco Colombia)"
+
 IODA = "https://api.ioda.inetintel.cc.gatech.edu/v2"
 XM = "https://servapibi.xm.com.co"
 TIEMPO_ESPERA = 45
@@ -206,7 +214,7 @@ def _get(url: str, intentos: int = INTENTOS_HTTP, tiempo: int = 0) -> Any:
     pinta las ocho zonas como «no hay datos», que es la peor mentira posible:
     parece que el país se apagó cuando lo que falló fue nuestra propia consulta.
     """
-    req = urllib.request.Request(url, headers={"User-Agent": "HOPE/0.2 (respuesta sismo Chocó)"})
+    req = urllib.request.Request(url, headers={"User-Agent": AGENTE})
     ultimo: Exception | None = None
     for n in range(intentos):
         try:
@@ -223,7 +231,7 @@ def _post(url: str, cuerpo: dict) -> Any:
     req = urllib.request.Request(
         url, data=json.dumps(cuerpo).encode(),
         headers={"Content-Type": "application/json",
-                 "User-Agent": "HOPE/0.2 (respuesta sismo Chocó)"})
+                 "User-Agent": AGENTE})
     with urllib.request.urlopen(req, timeout=TIEMPO_ESPERA * 2) as r:
         return json.loads(r.read().decode())
 
@@ -1195,7 +1203,7 @@ def _noche_procesada(fecha: str) -> tuple[bool, int]:
            .replace("{y}", str(TESELA_SONDA["y"]))
            .replace("{x}", str(TESELA_SONDA["x"])))
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "HOPE/0.3"})
+        req = urllib.request.Request(url, headers={"User-Agent": AGENTE})
         # Timeout corto y propio: esto es una comprobación de disponibilidad, no
         # una descarga de datos. Si la NASA va lenta, la respuesta correcta es
         # decir "no sé" en segundos, no dejar colgado un worker del servidor.
@@ -1451,7 +1459,7 @@ def _bm_tesela(fecha: str, tx: int, ty: int, cache: dict):
     try:
         from PIL import Image
         url = BLACK_MARBLE.format(fecha=fecha, z=BM_ZOOM, y=ty, x=tx)
-        req = urllib.request.Request(url, headers={"User-Agent": "HOPE/0.3"})
+        req = urllib.request.Request(url, headers={"User-Agent": AGENTE})
         with urllib.request.urlopen(req, timeout=TIEMPO_ESPERA) as r:
             im = Image.open(io.BytesIO(r.read())).convert("RGBA")
     except Exception:
@@ -1645,7 +1653,7 @@ def _radar_get(ruta: str, params: dict) -> Any:
     url = f"{RADAR}/{ruta}?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {token}",
-        "User-Agent": "HOPE/0.3 (respuesta sismo Chocó)"})
+        "User-Agent": AGENTE})
     with urllib.request.urlopen(req, timeout=TIEMPO_ESPERA) as r:
         return json.loads(r.read().decode())
 
@@ -2454,3 +2462,215 @@ def municipios_por_departamento(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
         ),
         "departamentos": orden,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  QUIÉN MÁS ESTÁ MIRANDO ESTO
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Todo lo anterior de este módulo mide infraestructura. Falta una pregunta que
+# no es técnica y que cambia qué hacer con los datos: ¿quién más está trabajando
+# este sismo, y qué ha publicado ya?
+#
+# Importa por dos razones concretas:
+#
+#   · Para no repetir trabajo. UNOSAT publicó una evaluación de daño en
+#     edificios hecha con satélite, y Microsoft AI for Good sacó predicciones
+#     de daño edificio por edificio sobre Cali y Pereira. Eso es infinitamente
+#     mejor que cualquier cosa que HOPE pueda derivar, y ya existe.
+#
+#   · Porque son ALIADOS con nombre. La restricción de diseño del proyecto es
+#     que una capa de datos sin canal hacia quien ejecuta no le llega a nadie.
+#     Una organización que ya publicó datos de este sismo es, por definición,
+#     alguien a quien le importa y que tiene equipo trabajando en ello.
+#
+# Fuentes verificadas el 2026-08-15. Se probaron seis y funcionan dos:
+#
+#   GDACS (Comisión Europea / JRC)  — sí. JSON abierto, sin llave, ~2 s.
+#   HDX / CKAN (OCHA)               — sí. JSON abierto, sin llave, CORS `*`.
+#   ReliefWeb v1                    — no: decomisionada (410).
+#   ReliefWeb v2                    — no: exige registrar la aplicación (403).
+#   WFP ADAM                        — no: exige llave (401).
+#   Copernicus EMS (RSS)            — no: la ruta publicada da 404.
+
+GDACS = "https://www.gdacs.org/gdacsapi/api/events"
+HDX = "https://data.humdata.org/api/3/action/package_search"
+
+# El sismo del 10 de agosto. Se usa como red de seguridad si la búsqueda por
+# fecha no lo encuentra, pero NO como única vía: un identificador cableado deja
+# de servir en cuanto GDACS reprocesa el evento.
+GDACS_EVENTO = 1557236
+
+
+def gdacs_evento() -> dict:
+    """Alerta oficial y población expuesta según GDACS (Comisión Europea).
+
+    Es la cifra más útil que aporta esta fuente y HOPE no puede calcularla:
+    cuánta gente vive dentro del área que se sacudió a intensidad VII o más.
+    Sale del cruce del ShakeMap con una rejilla global de población, y viene
+    de un organismo con nombre — que es exactamente lo que hace que un número
+    aguante dentro de una petición formal.
+    """
+    clave = "gdacs_evento"
+    if (c := _cache_leer(clave, 3600)) is not None:
+        return c
+
+    # Se busca por ventana de fechas y se filtra por país y magnitud, en vez de
+    # confiar en el identificador: así sigue funcionando si GDACS reprocesa.
+    eid = GDACS_EVENTO
+    try:
+        lista = _get(f"{GDACS}/geteventlist/SEARCH?eventtype=EQ"
+                     f"&fromDate=2026-08-09&toDate=2026-08-12"
+                     f"&alertlevel=Red;Orange")
+        for f in lista.get("features", []):
+            p = f.get("properties") or {}
+            if (p.get("iso3") == "COL"
+                    and abs(float((p.get("severitydata") or {}).get("severity") or 0) - 7.4) < 0.4):
+                eid = p.get("eventid") or eid
+                break
+    except Exception:
+        pass                      # se sigue con el identificador conocido
+
+    d = _get(f"{GDACS}/geteventdata?eventtype=EQ&eventid={eid}")
+    p = d.get("properties") or {}
+    det = p.get("earthquakedetails") or {}
+
+    def entero(v) -> Optional[int]:
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return None
+
+    res = {
+        "fuente": "GDACS — Global Disaster Alert and Coordination System "
+                  "(Comisión Europea / JRC y Naciones Unidas)",
+        "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "evento_id": eid,
+        "nivel_alerta": p.get("alertlevel"),
+        "puntaje_alerta": p.get("alertscore"),
+        "magnitud": (p.get("severitydata") or {}).get("severity"),
+        "profundidad_km": entero(det.get("depth")),
+        "poblacion_mmi7_shakemap": entero(det.get("shakepop")),
+        "poblacion_mmi7_rapida": entero(det.get("rapidpop")),
+        "descripcion_exposicion": det.get("shakepopdescription"),
+        "informe": (p.get("url") or {}).get("report"),
+        "que_aporta": (
+            "La población que vive dentro del área sacudida a intensidad VII o "
+            "más. HOPE no puede calcularla: hace falta cruzar el ShakeMap con "
+            "una rejilla global de población. Que la publique un organismo con "
+            "nombre es justo lo que hace que la cifra aguante en una petición "
+            "formal."
+        ),
+        "limite": (
+            "Es exposición, no daño: cuenta a quien sintió esa sacudida, no a "
+            "quien perdió su casa. Y el nivel de alerta es del evento entero, "
+            "no dice nada de un municipio en concreto."
+        ),
+    }
+    _cache_guardar(clave, res)
+    return res
+
+
+# Organizaciones cuyo trabajo conviene mirar antes de derivar nada propio. El
+# orden es el de utilidad para quien coordina.
+PESO_ORG = {
+    "unosat": 0, "united nations satellite centre": 0,
+    "humanitarian openstreetmap team": 1, "hot": 1,
+    "microsoft": 2,
+    "ocha": 3, "wfp": 3, "world food programme": 3,
+}
+
+
+def hdx_publicaciones(desde: str = "2026-08-10") -> dict:
+    """Qué han publicado otros sobre ESTE sismo, en vivo desde HDX.
+
+    HDX es el repositorio de datos humanitarios de OCHA. Se consulta su API de
+    CKAN y se filtra por fecha de modificación: cualquier conjunto tocado desde
+    el día del sismo es, casi siempre, sobre este sismo.
+
+    No se descarga nada pesado. Varios de estos conjuntos son Geopackage y
+    GeoTIFF de decenas de megas —predicciones de daño edificio por edificio— y
+    procesarlos exigiría GDAL, que no está y no compensa meter. Lo que se
+    entrega es el catálogo con enlaces: quien coordina se los baja y los abre
+    en QGIS, que es donde sirven de verdad.
+    """
+    clave = f"hdx_publicaciones:{desde}"
+    if (c := _cache_leer(clave, 3600)) is not None:
+        return c
+
+    d = _get(f"{HDX}?q=colombia+earthquake&rows=30")
+    salida = []
+    for x in (d.get("result") or {}).get("results", []):
+        modificado = (x.get("metadata_modified") or "")[:10]
+        if modificado < desde:
+            continue                     # es de otro sismo anterior
+        org = (x.get("organization") or {}).get("title", "")
+        recursos = [{
+            "nombre": r.get("name"),
+            "formato": r.get("format"),
+            "tamano_bytes": r.get("size"),
+            "url": r.get("url"),
+        } for r in x.get("resources", [])]
+        salida.append({
+            "titulo": x.get("title"),
+            "organizacion": org,
+            "modificado": modificado,
+            "url": f"https://data.humdata.org/dataset/{x.get('name')}",
+            "notas": (x.get("notes") or "")[:400],
+            "recursos": recursos,
+            "formatos": sorted({r["formato"] for r in recursos if r["formato"]}),
+        })
+
+    def orden(p: dict) -> tuple:
+        o = p["organizacion"].lower()
+        peso = next((v for k, v in PESO_ORG.items() if k in o), 9)
+        return (peso, p["modificado"])
+
+    salida.sort(key=orden)
+
+    res = {
+        "fuente": "HDX — Humanitarian Data Exchange (OCHA), API de CKAN",
+        "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "desde": desde,
+        "total": len(salida),
+        "que_aporta": (
+            "Quién más está trabajando este sismo y qué ha publicado ya. Sirve "
+            "para dos cosas: no repetir trabajo que otro hizo mejor, y saber a "
+            "qué organizaciones escribirles — una que ya publicó datos de este "
+            "evento tiene equipo dedicado a él."
+        ),
+        "nota_formatos": (
+            "Los conjuntos pesados (Geopackage, GeoTIFF) no se procesan aquí: "
+            "harían falta GDAL y decenas de megas por consulta. Van los enlaces "
+            "para abrirlos en QGIS, que es donde sirven."
+        ),
+        "publicaciones": salida,
+    }
+    _cache_guardar(clave, res)
+    return res
+
+
+def fuentes_externas() -> dict:
+    """Las dos juntas, cada una tolerando el fallo de la otra."""
+    salida: dict[str, Any] = {
+        "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    try:
+        salida["gdacs"] = gdacs_evento()
+    except Exception as e:
+        salida["error_gdacs"] = f"{type(e).__name__}: {e}"
+    try:
+        salida["hdx"] = hdx_publicaciones()
+    except Exception as e:
+        salida["error_hdx"] = f"{type(e).__name__}: {e}"
+
+    salida["no_disponibles"] = [
+        {"fuente": "ReliefWeb", "motivo": "La v1 quedó decomisionada (410) y la "
+         "v2 exige registrar la aplicación (403). Es gratis registrarse en "
+         "https://reliefweb.int/help/api — con eso entrarían los informes de "
+         "situación oficiales."},
+        {"fuente": "WFP ADAM", "motivo": "Exige llave (401)."},
+        {"fuente": "Copernicus EMS", "motivo": "La ruta RSS publicada da 404. "
+         "Si hay activación de mapeo rápido para este sismo, sus productos "
+         "suelen acabar en HDX, que sí se está consultando."},
+    ]
+    return salida

@@ -406,6 +406,21 @@ municipios marcados «sin luz», unos 2 lo estarán por ruido. Con el umbral fij
 de −35% que se usaba antes, el 3% del grupo de control (donde no se cayó nada)
 salía «sin luz» y el 11% «poca luz». Ver FUENTES.md §8.
 
+**Quién más está mirando esto:**
+
+| Método | Ruta | |
+|---|---|---|
+| `GET` | `/api/fuentes/externas` | GDACS (alerta oficial y población expuesta) + el catálogo en vivo de HDX |
+
+GDACS aporta lo que este mapa no puede calcular: **1.969.735 personas dentro
+del área sacudida a intensidad VII o más**, alerta roja. Va dentro de las
+cartas porque viene de la Comisión Europea y quien la reciba puede comprobarla.
+
+HDX dice quién más trabaja este sismo: **UNOSAT** ya publicó evaluación de daño
+en edificios de Viterbo y **Microsoft AI for Good**, predicciones edificio por
+edificio sobre Cali y Pereira. Eso es mejor que nada que HOPE pueda derivar, y
+además son destinatarios con nombre para las cartas.
+
 **Pedir conectividad (`/enlaces.html`):**
 
 | Método | Ruta | |

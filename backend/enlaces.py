@@ -503,6 +503,13 @@ def reunir_evidencia(mmi_min: float = 5.0, horas: int = 3) -> dict:
     mapa = fuentes.mapa_precision(mmi_min, horas)
     lugares = mapa["lugares"]
 
+    # GDACS es de apoyo, no de base: si no responde, la carta sale igual con
+    # las mediciones propias. Una fuente auxiliar no puede tumbar la petición.
+    try:
+        gdacs = fuentes.gdacs_evento()
+    except Exception:
+        gdacs = None
+
     def top(clases: tuple[str, ...], n: int = 12) -> list[dict]:
         return [{"nombre": l["nombre"], "departamento": l["departamento"],
                  "poblacion": l["poblacion"], "mmi": l["mmi"],
@@ -533,6 +540,11 @@ def reunir_evidencia(mmi_min: float = 5.0, horas: int = 3) -> dict:
         "personas_ciegas": r.get("poblacion_en_puntos_ciegos", 0),
         "personas_expuestas": r.get("poblacion_expuesta", 0),
         "epicentro_ciego": epicentro_ciego,
+        # Una cifra que HOPE no puede calcular —hace falta cruzar el ShakeMap
+        # con una rejilla global de población— y que viene de un organismo con
+        # nombre. En una petición formal eso pesa más que cualquier número
+        # propio: el destinatario puede verificarla sin fiarse de nosotros.
+        "gdacs": gdacs,
     }
 
 
@@ -636,6 +648,23 @@ def redactar(dest_id: str, evidencia: dict, remitente: dict,
         "deriva": deriva.get("valor_pct"),
         "n_control": deriva.get("poblados_de_control", 0),
     }
+
+    # Respaldo de un tercero. Va justo detrás de nuestras cifras porque es lo
+    # que las sostiene: quien recibe la carta puede comprobarlo sin fiarse.
+    g = ev.get("gdacs") or {}
+    exp = g.get("poblacion_mmi7_shakemap")
+    respaldo_es = ((
+        "\n\nNo es solo nuestra cuenta: GDACS —el sistema de alerta de la "
+        "Comisión Europea y\nNaciones Unidas— mantiene este evento en alerta "
+        f"{str(g.get('nivel_alerta', '')).upper()} y cifra en {_mil(exp)}\n"
+        "las personas que viven dentro del área sacudida a intensidad VII o más."
+    ) if exp else "")
+    respaldo_en = ((
+        "\n\nThis is not only our own count: GDACS —the European Commission and "
+        "United\nNations alert system— keeps this event at "
+        f"{str(g.get('nivel_alerta', '')).upper()} alert and puts "
+        f"{exp:,}\npeople inside the area shaken at intensity VII or above."
+    ) if exp else "")
     mapa_linea = f"\nMapa en vivo: {url_mapa}\n" if url_mapa else ""
 
     n_ciegos = r.get("puntos_ciegos", 0)
@@ -710,7 +739,7 @@ the official municipality list: {r.get('lugares', 0)} municipalities,
 
   {n_ciegos} municipalities, home to {p_ciegos:,} people, shook at MMI 6 or
   above and have NO local measurement of any kind. Not "they are fine" —
-  nobody has measured them.{remate_en}
+  nobody has measured them.{remate_en}{respaldo_en}
 
 BLIND SPOTS — highest priority, no data exists for these:
 {_lista_en(ev['puntos_ciegos'])}
@@ -772,7 +801,7 @@ El hallazgo que importa:
 
   {n_ciegos} municipios, donde viven {_mil(p_ciegos)} personas, temblaron a
   intensidad MMI 6 o más y NO tienen ninguna medición local. No es que estén
-  bien: es que nadie los ha mirado.{remate_es}
+  bien: es que nadie los ha mirado.{remate_es}{respaldo_es}
 
 PUNTOS CIEGOS — máxima prioridad, no existe dato de estos lugares:
 {_lista(ev['puntos_ciegos'])}
@@ -909,6 +938,17 @@ def carta_conjunta_breve(evidencia: dict, remitente: dict,
         firma += f"\n{ciudad}, Colombia"
     enlace = f"\nDatos, metodo y mapa en vivo: {url_mapa}\n" if url_mapa else ""
 
+    # Respaldo de un tercero verificable. En la breve cabe en una frase, y es
+    # la frase que hace que el resto de la carta se lea como comprobable.
+    g = ev.get("gdacs") or {}
+    exp = g.get("poblacion_mmi7_shakemap")
+    respaldo = ((
+        "\n\nGDACS -el sistema de alerta de la Comision Europea y Naciones "
+        "Unidas- mantiene\neste evento en alerta "
+        f"{str(g.get('nivel_alerta', '')).upper()} y cifra en {_mil(exp)} "
+        "las personas dentro\ndel area sacudida a intensidad VII o mas."
+    ) if exp else "")
+
     return f"""DERECHO DE PETICION (art. 23 de la Constitucion Politica)
 Sismo M7.4 del 10 de agosto de 2026, Choco - evento USGS {fuentes.USGS_EVENTO}
 
@@ -925,7 +965,7 @@ Algunos: {nombres}.
 
 Esto sale de cruzar cuatro fuentes publicas -USGS PAGER/ShakeMap, satelite
 VIIRS de la NASA, sondas RIPE Atlas e IODA de Georgia Tech- sobre el listado
-oficial de municipios. Son datos verificables, no estimaciones.
+oficial de municipios. Son datos verificables, no estimaciones.{respaldo}
 
 SOLICITO:
 

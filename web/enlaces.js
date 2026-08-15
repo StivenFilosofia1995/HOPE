@@ -47,10 +47,68 @@ async function iniciar() {
     return;
   }
 
-  // Las dos en paralelo: el directorio es estático y la evidencia tarda unos
-  // segundos, no hay razón para encadenarlas.
-  const [dir] = await Promise.all([cargarDirectorio(), cargarEvidencia()]);
+  // En paralelo: el directorio es estático, la evidencia tarda unos segundos y
+  // las fuentes externas son ajenas. No hay razón para encadenarlas.
+  const [dir] = await Promise.all([
+    cargarDirectorio(), cargarEvidencia(), cargarAliados(),
+  ]);
   if (dir) pintarGrupos(dir);
+}
+
+/* ── Quién más está trabajando este sismo ──────────────────────────────────
+   Datos en vivo de HDX (Naciones Unidas) y GDACS (Comisión Europea). No es
+   decoración: una organización que ya publicó datos de este evento tiene
+   equipo dedicado a él, y eso la convierte en un destinatario con nombre. */
+
+async function cargarAliados() {
+  const cont = $('#aliados');
+  try {
+    const d = await (await fetch(`${S.base}/fuentes/externas`)).json();
+    S.externas = d;
+    let html = '';
+
+    const g = d.gdacs;
+    if (g && g.poblacion_mmi7_shakemap) {
+      html += `<div class="gdacs-caja">
+        <b>GDACS</b> (Comisión Europea y Naciones Unidas) mantiene este evento en
+        alerta <b class="alerta-${escapar(String(g.nivel_alerta).toLowerCase())}">${escapar(g.nivel_alerta)}</b>
+        y cifra en <b>${nf.format(g.poblacion_mmi7_shakemap)}</b> las personas que
+        viven dentro del área sacudida a intensidad VII o más.
+        <span class="hint">Esa cifra no la puede calcular este mapa: hace falta
+        cruzar el ShakeMap con una rejilla global de población. Va dentro de las
+        cartas porque viene de un organismo con nombre y quien la reciba puede
+        comprobarla.</span>
+        ${g.informe ? `<a href="${escapar(g.informe)}" target="_blank" rel="noopener">Informe oficial →</a>` : ''}
+      </div>`;
+    }
+
+    const pubs = (d.hdx || {}).publicaciones || [];
+    if (pubs.length) {
+      html += '<ul class="pubs">' + pubs.map((p) => `
+        <li>
+          <a href="${escapar(p.url)}" target="_blank" rel="noopener">${escapar(p.titulo)}</a>
+          <div class="org">${escapar(p.organizacion)} · actualizado ${escapar(p.modificado)}
+            ${p.formatos.length ? ' · ' + escapar(p.formatos.join(', ')) : ''}</div>
+        </li>`).join('') + '</ul>';
+    } else if (!html) {
+      html = '<p class="hint">No hay publicaciones nuevas sobre este evento.</p>';
+    }
+
+    // Lo que se probó y no sirve también se dice: ahorra que alguien repita la
+    // búsqueda, y algunas se arreglan con solo registrarse.
+    if ((d.no_disponibles || []).length) {
+      html += '<details class="no-disp"><summary>Fuentes que se probaron y no ' +
+        'están disponibles</summary><ul>' +
+        d.no_disponibles.map((n) =>
+          `<li><b>${escapar(n.fuente)}</b> — ${escapar(n.motivo)}</li>`).join('') +
+        '</ul></details>';
+    }
+
+    cont.innerHTML = html;
+  } catch (e) {
+    cont.innerHTML = `<p class="hint">No se pudo consultar (${escapar(e.message)}). ` +
+      'Las cartas se escriben igual: esto es contexto, no evidencia propia.</p>';
+  }
 }
 
 async function elegirBase() {

@@ -702,6 +702,27 @@ def mapa_municipios_csv(
     )
 
 
+@app.get("/api/fuentes/externas", tags=["sismos"])
+def fuentes_externas() -> dict:
+    """**Quién más está mirando este sismo, y qué ha publicado ya.**
+
+    Dos fuentes verificadas el 2026-08-15 (se probaron seis):
+
+    - **GDACS** (Comisión Europea / JRC): nivel de alerta oficial y —lo que
+      HOPE no puede calcular— cuánta gente vive dentro del área sacudida a
+      intensidad VII o más. Que la cifra venga de un organismo con nombre es
+      lo que la hace aguantar dentro de una petición formal.
+    - **HDX** (OCHA): el catálogo en vivo de lo publicado sobre este evento.
+      UNOSAT ya sacó una evaluación de daño en edificios por satélite y
+      Microsoft AI for Good, predicciones edificio por edificio sobre Cali y
+      Pereira. Eso es mejor que nada que HOPE pueda derivar, y ya existe.
+
+    Sirve para no repetir trabajo ajeno y para saber a quién escribirle: una
+    organización que ya publicó datos de este sismo tiene equipo en ello.
+    """
+    return fuentes.fuentes_externas()
+
+
 @app.get("/api/cortes/sondas", tags=["cortes"])
 def cortes_sondas() -> dict:
     """Sondas RIPE Atlas: puntos individuales reales con coordenadas exactas,

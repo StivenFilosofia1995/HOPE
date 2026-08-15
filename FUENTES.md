@@ -478,6 +478,82 @@ datos; solo el último es defendible.
 
 Endpoints: `GET /api/mapa/municipios?mmi_min=4` y `.csv` para adjuntar.
 
+---
+
+## 10. Fuentes externas: quién más está mirando esto
+
+Buscadas y probadas el 2026-08-15. **Seis candidatas, dos sirven.**
+
+### GDACS — alerta oficial y población expuesta · FUNCIONA
+
+`https://www.gdacs.org/gdacsapi/api/events/` — JSON abierto, sin llave, ~2 s.
+Sin CORS: hay que proxiar por el backend.
+
+```
+# El id puede cambiar si reprocesan: buscar por fecha y filtrar por iso3
+/geteventlist/SEARCH?eventtype=EQ&fromDate=2026-08-09&toDate=2026-08-12&alertlevel=Red;Orange
+/geteventdata?eventtype=EQ&eventid=1557236
+```
+
+Aporta lo que HOPE **no puede calcular**: cuánta gente vive dentro del área
+sacudida a intensidad VII o más. Sale de cruzar el ShakeMap con una rejilla
+global de población.
+
+| campo | valor medido |
+|---|---|
+| `alertlevel` / `alertscore` | Red / 3 |
+| `shakepop` | **1.969.735** (MMI ≥ VII, con ShakeMap) |
+| `rapidpop` | 2.883.124 (MMI ≥ VII, estimación rápida) |
+| `depth` | 107 km |
+
+Va dentro de las cartas: que la cifra venga de la Comisión Europea y no de
+nosotros es lo que la hace resistir en una petición formal.
+**Límite:** es exposición, no daño — cuenta a quien sintió la sacudida, no a
+quien perdió la casa. Y el nivel de alerta es del evento entero.
+
+> **Trampa que costó un 403:** GDACS rechaza cualquier petición cuyo
+> `User-Agent` lleve un carácter no ASCII. El del proyecto decía «respuesta
+> sismo Chocó» y devolvía 403 sistemáticamente — se veía igual que una fuente
+> caída. Ahora la cabecera es ASCII y está en una sola constante, `AGENTE`.
+
+### HDX / CKAN (OCHA) — el catálogo en vivo · FUNCIONA
+
+`https://data.humdata.org/api/3/action/package_search?q=colombia+earthquake`
+JSON abierto, sin llave, **CORS `*`**, 0,6 s. Se filtra por
+`metadata_modified >= 2026-08-10` para quedarse con lo de este sismo.
+
+Lo publicado sobre este evento al 2026-08-15 (7 conjuntos):
+
+| organización | qué publicó | formato |
+|---|---|---|
+| **UNOSAT** | Exposición de población del evento | XLSX |
+| **UNOSAT** | **Evaluación de daño en edificios, Viterbo (Caldas)** | GDB, SHP |
+| **HOT** | Edificios y vías de la zona, actualizados | GeoJSON, SHP |
+| **Microsoft AI for Good** | **Predicción de daño edificio por edificio, Cali** (Airbus) | GeoTIFF, GPKG |
+| **Microsoft AI for Good** | Ídem sobre **Pereira** (Vantor) | GeoTIFF, GPKG |
+| GDACS | RSS del sistema de alertas | CSV |
+| GLIDE | Eventos de desastre de Colombia | CSV, GeoJSON |
+
+Sirve para dos cosas distintas y las dos importan: **no repetir trabajo** —
+UNOSAT y Microsoft ya hicieron evaluación de daño con satélite, y eso es mejor
+que nada que HOPE pueda derivar— y **saber a quién escribirle**: una
+organización que ya publicó datos de este evento tiene equipo dedicado a él.
+
+Los pesados (Geopackage, GeoTIFF de 10-77 MB) **no se procesan**: harían falta
+GDAL y decenas de megas por consulta. Se entregan los enlaces para abrirlos en
+QGIS, que es donde sirven.
+
+### Probadas y descartadas
+
+| fuente | resultado |
+|---|---|
+| **ReliefWeb v1** | 410 — decomisionada. |
+| **ReliefWeb v2** | 403 — exige *registrar la aplicación*. Es gratis en `reliefweb.int/help/api`; con eso entrarían los informes de situación oficiales. **Vale la pena pedirla.** |
+| **WFP ADAM** | 401 — exige llave. |
+| **Copernicus EMS** (RSS de activaciones) | 404 en la ruta publicada. Si hay activación de mapeo rápido, sus productos suelen acabar en HDX, que sí se consulta. |
+
+Endpoint: `GET /api/fuentes/externas`
+
 ## Operadores eléctricos y telcos: buscado a fondo el 2026-08-13
 
 La pregunta obvia es «¿por qué no pegarse directo a la API del operador que
