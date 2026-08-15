@@ -288,6 +288,121 @@ es ausencia de problema, solo ausencia de medición ahí.**
 
 ---
 
+---
+
+## 7. USGS PAGER — poblados, población y sacudida punto por punto
+
+**Lo que rompe el techo de resolución del sistema.** Verificado el 2026-08-15.
+
+Hasta aquí, la granularidad máxima era el departamento: IODA no baja de ahí y
+XM publica por área operativa. Chocó son 46.500 km², y nadie lleva un enlace
+satelital a un departamento.
+
+El producto `losspager` del evento publica `json/cities.json`, con **todos los
+poblados expuestos**: nombre, coordenadas, **población** e **intensidad MMI
+interpolada desde el ShakeMap en esa coordenada exacta**. Para `us6000tjl2` son
+**624 lugares**, y no es una estimación de nadie: es el cálculo con el que el
+USGS emitió su alerta roja.
+
+```
+# La URL lleva sello de versión y cambia cuando reprocesan: resolverla siempre
+# desde el detalle del evento, nunca cablearla.
+GET https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&eventid=us6000tjl2
+    → properties.products.losspager[0].contents["json/cities.json"].url
+```
+
+Reparto medido para este evento:
+
+| MMI ≥ | lugares | población | teselas Black Marble distintas |
+|-------|---------|-----------|-------------------------------|
+| 4,0   | 537     | 36.456.396| 20                            |
+| 5,0   | 263     | 17.238.802| 13                            |
+| 6,0   | 104     |  7.902.416|  7                            |
+| 7,0   |  21     |  2.563.636|  —                            |
+
+Ventajas sobre todo lo demás del catálogo: **no depende de que ninguna red siga
+en pie** (sale de sismómetros), llega con población incorporada, y su
+resolución es el poblado. Escribe sin tildes (`Quibdo`, `Tado`, `San Jose del
+Palmar`); conviene reescribir los nombres contra un catálogo propio.
+
+También sirve `json/exposures.json` (población por franja de MMI) y
+`coverage_mmi_{low,medium,high}_res.covjson` (rejilla regular de MMI; la baja
+son 172×171 nodos ≈ 4 km, 118 KB).
+
+---
+
+## 8. La deriva del satélite: por qué un −12% no era un apagón
+
+**El hallazgo más importante del 2026-08-15, y el que evita 114 falsos positivos.**
+
+Al medir Black Marble sobre los 537 poblados expuestos, la luz nocturna había
+bajado una **mediana de −12,2% respecto a antes del sismo**. Leerlo en crudo
+habría marcado 114 pueblos como «sin luz».
+
+Era falso. El desglose por sacudida lo delata:
+
+| franja MMI | poblados | cambio mediano |
+|------------|----------|----------------|
+| 4,9 – 5,5  | 75       | **−8,2 %**     |
+| 5,5 – 6,0  | 80       | −12,3 %        |
+| 6,0 – 6,5  | 49       | −16,6 %        |
+| 6,5 – 7,0  | 34       | −17,6 %        |
+| 7,0 – 8,5  | 21       | −13,6 %        |
+
+**A MMI 5 no se cae un poste**, y aun así esos pueblos marcaban −8,2%. Ese
+fondo es fase lunar, nubosidad y relleno por modelo del producto — no
+electricidad. El archivo ya documentaba esa trampa para la banda cruda; lo
+nuevo es que **el producto BRDF-corregido la reduce pero NO la elimina**.
+
+Hay señal real: el gradiente de −8% a −17% sí acompaña a la sacudida. Pero la
+señal es la **diferencia**, no el número absoluto.
+
+### La corrección
+
+Es la misma idea que ya se usa con IODA —comparar contra un testigo que cancele
+lo que no interesa— aplicada al espacio en vez de al tiempo:
+
+1. Se piden los poblados desde **MMI 4,0**, aunque solo se muestren desde 5,0.
+   Los que apenas temblaron son el **grupo de control**: lo que les pasó a
+   ellos le pasó al satélite, no al sismo. Cuestan 7 teselas más.
+2. La **deriva** es la mediana de su cambio. Medida el 2026-08-15 con 376
+   poblados de control: **−6,8%**.
+3. Se le resta a todos los demás. Los porcentajes que se publican y los que
+   van dentro de las cartas ya llevan la resta hecha.
+4. Solo entran al control las confianzas `media` y `alta`. Un pueblo que parte
+   de casi nada de luz mete un ruido enorme en la mediana.
+5. **Si no hay al menos 20 poblados de control, no se corrige y la capa de luz
+   deja de usarse para clasificar.** Un «no sé» honesto vale más que 114
+   pueblos pintados de rojo por culpa de la luna.
+
+Resultado: los «sin luz» pasan de **114 a 28**.
+
+### Y la categoría que faltaba: el punto ciego
+
+Una medida que existe pero no es concluyente **no cuenta como medición**. Si
+contara, un pueblo del que solo sabemos «el número salió pero no significa
+nada» quedaría marcado como comprobado y desaparecería de la lista de los que
+hay que ir a mirar.
+
+De ahí sale la clasificación por **certeza**, que es lo que ninguna capa
+anterior decía:
+
+- `local` — se midió en ese punto (satélite sobre el casco, o sonda física a
+  menos de 25 km).
+- `heredada` — solo se conoce el promedio de su departamento. No dice nada de
+  ese pueblo en concreto.
+- `ninguna` — nadie lo ha mirado.
+
+Y el **punto ciego**: un poblado que el USGS confirma sacudido a MMI ≥ 6, con
+gente dentro, sin ninguna medición local. Medidos el 2026-08-15: **23 poblados,
+325.333 personas**, entre ellos **San José del Palmar, el epicentro mismo**, y
+11 municipios más del Chocó.
+
+Un punto ciego **no es un pueblo sin problemas: es un pueblo sin datos**, y
+suele ser justo lo contrario. Antes se veía igual que uno comprobado sano.
+
+Endpoint: `GET /api/mapa/lugares?mmi_min=5&horas=3&noches=3`
+
 ## Operadores eléctricos y telcos: buscado a fondo el 2026-08-13
 
 La pregunta obvia es «¿por qué no pegarse directo a la API del operador que

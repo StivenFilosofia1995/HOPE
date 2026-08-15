@@ -1,0 +1,201 @@
+/* ===========================================================================
+   HOPE — sala de enlaces. Estilos propios de enlaces.html.
+   Reutiliza las variables de style.css (:root) para no tener dos paletas.
+   =========================================================================== */
+
+body.pagina-enlaces {
+  height: auto;
+  min-height: 100%;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.cabecera {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--linea);
+}
+.cabecera-in {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cabecera h1 { font-size: 20px; margin: 2px 0 0; letter-spacing: .3px; }
+.cabecera .sobrelinea {
+  margin: 0; font-size: 10px; letter-spacing: 1.4px;
+  color: var(--texto-2); text-transform: uppercase;
+}
+.cabecera a { text-decoration: none; white-space: nowrap; }
+
+.envoltura { max-width: 900px; margin: 0 auto; padding: 20px 20px 60px; }
+
+.tarjeta {
+  background: var(--bg-2);
+  border: 1px solid var(--linea);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.tarjeta h2 { font-size: 15px; margin: 0 0 6px; letter-spacing: .3px; }
+.tarjeta .grande { font-size: 15px; line-height: 1.55; margin: 0 0 10px; }
+.tarjeta .hint { color: var(--texto-2); font-size: 12.5px; line-height: 1.55; margin: 8px 0 0; }
+.tarjeta ul { margin: 8px 0 0; padding-left: 20px; line-height: 1.6; }
+.tarjeta ul li { margin-bottom: 6px; }
+
+.intro { border-left: 3px solid var(--acento); }
+
+/* ── Evidencia en vivo ───────────────────────────────────── */
+.evidencia { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+.cifra {
+  background: var(--bg-3);
+  border: 1px solid var(--linea);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.cifra b { display: block; font-size: 24px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.cifra span { display: block; font-size: 11.5px; color: var(--texto-2); margin-top: 5px; line-height: 1.4; }
+.cifra.alarma { border-color: var(--critica); }
+.cifra.alarma b { color: var(--critica); }
+.cifra.aviso { border-color: var(--alta); }
+.cifra.aviso b { color: var(--alta); }
+.cargando { color: var(--texto-2); font-style: italic; }
+
+.fallo {
+  background: rgba(255, 149, 0, .1);
+  border: 1px solid var(--alta);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* ── Formulario del remitente ────────────────────────────── */
+.rejilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 14px;
+  margin-top: 12px;
+}
+.rejilla label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--texto-2); }
+.rejilla label.ancho { grid-column: 1 / -1; }
+.rejilla input {
+  background: var(--bg-3);
+  border: 1px solid var(--linea);
+  border-radius: 6px;
+  color: var(--texto);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+.rejilla input:focus { outline: 2px solid var(--acento); outline-offset: -1px; }
+
+/* ── Barra de acciones ───────────────────────────────────── */
+.acciones-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.acciones-barra .hint { flex-basis: 100%; margin: 0; }
+.btn-grande { font-size: 14px; padding: 11px 18px; }
+
+/* ── Grupos y destinatarios ──────────────────────────────── */
+.grupo-titulo {
+  margin: 26px 0 4px;
+  font-size: 15px;
+  letter-spacing: .3px;
+}
+.grupo-porque {
+  color: var(--texto-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 0 0 12px;
+  max-width: 74ch;
+}
+
+.dest {
+  background: var(--bg-2);
+  border: 1px solid var(--linea);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.dest-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+.dest-head:hover { background: var(--bg-3); }
+.dest-head h3 { margin: 0 0 3px; font-size: 14px; font-weight: 600; }
+.dest-head .canal { font-size: 12px; color: var(--texto-2); word-break: break-all; }
+.dest-head .crece { flex: 1; min-width: 0; }
+
+.etq {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+  margin-left: 6px;
+}
+.etq.ok { color: var(--baja); }
+.etq.dudosa { color: var(--alta); }
+.etq.via { color: #c77dff; }
+
+.dest-clave {
+  background: rgba(199, 125, 255, .09);
+  border-left: 2px solid #c77dff;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 0 16px 12px;
+  border-radius: 0 6px 6px 0;
+}
+.dest-cuerpo { padding: 0 16px 16px; border-top: 1px solid var(--linea); }
+.dest-cuerpo p.hint:first-child { margin-top: 12px; }
+
+.carta-texto {
+  width: 100%;
+  background: var(--bg);
+  color: var(--texto);
+  border: 1px solid var(--linea);
+  border-radius: 8px;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 260px;
+}
+.carta-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+.marca-estado { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.marca-estado select {
+  background: var(--bg-3);
+  border: 1px solid var(--linea);
+  border-radius: 6px;
+  color: var(--texto);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+.dest[data-marca="enviado"]   { border-color: var(--acento); }
+.dest[data-marca="respondio"] { border-color: var(--baja); }
+.dest[data-marca="comprometio"] { border-color: var(--baja); box-shadow: 0 0 0 1px var(--baja) inset; }
+
+.nota-final { border-left: 3px solid var(--alta); margin-top: 26px; }
+
+@media (max-width: 620px) {
+  .cabecera-in { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .envoltura { padding: 16px 14px 50px; }
+  .tarjeta { padding: 15px 16px; }
+  .dest-head { flex-direction: column; gap: 8px; }
+  .marca-estado { margin-left: 0; }
+}

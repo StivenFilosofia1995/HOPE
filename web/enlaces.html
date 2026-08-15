@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HOPE — Pedir conectividad · Sismo M7.4 Chocó</title>
+  <meta name="description" content="Redacta automáticamente las peticiones de internet de emergencia a operadores, satélite y organismos humanitarios, con los datos medidos del sismo dentro." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="enlaces.css" />
+</head>
+<body class="pagina-enlaces">
+
+<header class="cabecera">
+  <div class="cabecera-in">
+    <div>
+      <p class="sobrelinea">SISMO M7.4 · CHOCÓ · 10 DE AGOSTO DE 2026</p>
+      <h1>Pedir conectividad</h1>
+    </div>
+    <a class="btn btn-sec" href="index.html">← Volver al mapa</a>
+  </div>
+</header>
+
+<main class="envoltura">
+
+  <!-- ═══ Qué es esto, en una frase ═══ -->
+  <section class="tarjeta intro">
+    <p class="grande">Este sistema <strong>escribe solo</strong> una carta distinta
+      para cada organización que podría dar internet a la zona, con las
+      mediciones de este momento dentro: qué pueblos, cuánta gente, y si lo que
+      falta es <strong>energía</strong> o es <strong>red</strong>.</p>
+    <p class="hint">Tú las revisas y las envías desde tu correo. El sistema no
+      manda nada por su cuenta — una carta firmada por una persona real, con su
+      teléfono, la lee alguien; un envío masivo desde un servidor desconocido
+      cae en el filtro de spam y quema el único contacto que hay.</p>
+  </section>
+
+  <!-- ═══ La evidencia en vivo ═══ -->
+  <section class="tarjeta">
+    <h2>Lo que se va a poder demostrar</h2>
+    <p class="hint">Consultado ahora mismo. Es lo que va dentro de cada carta.</p>
+    <div id="evidencia" class="evidencia">
+      <p class="cargando">Midiendo…</p>
+    </div>
+    <div id="evidencia-fallos"></div>
+  </section>
+
+  <!-- ═══ Quién firma ═══ -->
+  <section class="tarjeta">
+    <h2>Quién firma</h2>
+    <p class="hint">Va al pie de cada carta. <strong>Se guarda solo en este
+      navegador</strong>: no viaja a ninguna base de datos ni queda registrado en
+      el servidor. Sin un nombre y un teléfono de vuelta, casi nadie responde
+      una petición de emergencia.</p>
+    <form id="form-remitente" class="rejilla">
+      <label>Tu nombre <input name="nombre" type="text" maxlength="120" placeholder="Nombre y apellido" /></label>
+      <label>Cargo o rol <input name="cargo" type="text" maxlength="120" placeholder="Voluntario de datos" /></label>
+      <label>Organización <input name="organizacion" type="text" maxlength="160" placeholder="Si la hay. Suma mucho." /></label>
+      <label>Ciudad <input name="ciudad" type="text" maxlength="120" placeholder="Medellín" /></label>
+      <label>Teléfono <input name="telefono" type="text" maxlength="60" placeholder="+57 300 000 0000" /></label>
+      <label>Tu correo <input name="correo" type="email" maxlength="160" placeholder="tucorreo@ejemplo.com" /></label>
+      <label class="ancho">Enlace público al mapa
+        <input name="url_mapa" type="url" maxlength="300" placeholder="https://…  (opcional, pero da credibilidad)" />
+      </label>
+    </form>
+    <p class="hint" id="aviso-firma"></p>
+  </section>
+
+  <!-- ═══ Acciones ═══ -->
+  <section class="tarjeta acciones-barra">
+    <button id="btn-generar" class="btn btn-primario btn-grande">
+      Escribir todas las cartas
+    </button>
+    <button id="btn-zip" class="btn btn-sec" disabled>
+      Descargar todas (.eml para el correo)
+    </button>
+    <p class="hint" id="estado-generar"></p>
+  </section>
+
+  <!-- ═══ Las cartas, por grupo ═══ -->
+  <div id="grupos"></div>
+
+  <section class="tarjeta nota-final">
+    <h2>Antes de enviar</h2>
+    <ul>
+      <li><strong>Léela.</strong> Estás pidiendo recursos en nombre de
+        comunidades reales y va tu nombre al pie.</li>
+      <li><strong>Empieza por las de arriba.</strong> Las organizaciones de
+        telecomunicaciones de emergencia existen exactamente para esto; no hay
+        que convencerlas de la causa.</li>
+      <li><strong>No te saltes al MinTIC y a la UNGRD.</strong> La UIT despliega
+        terminales satelitales en 24–48 horas, pero solo si lo pide el Estado.
+        Sin esa carta, media lista de este directorio es inalcanzable.</li>
+      <li><strong>Esto no es una línea de emergencia.</strong> Si hay vidas en
+        riesgo ahora, el número es el <strong>123</strong>.</li>
+    </ul>
+  </section>
+
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="enlaces.js"></script>
+</body>
+</html>

@@ -142,7 +142,7 @@ async function iniciar() {
   // mapa. Lo demás llena el contexto detrás.
   cargarPulso();           // depende de Almacen: sabe si hay backend o no
   cargarOperadores();
-  cargarLuzMunicipios();
+  cargarLugares();
   cargarLuces();
   cargarCortes();
   cargarRadarCF();
@@ -181,7 +181,7 @@ function iniciarAutoRefresco() {
       cargarReplicas(),
       cargarCortes(),
       cargarRadarCF(),
-      cargarLuzMunicipios(),
+      cargarLugares(),
       cargarSismosRecientes(),
       cargarClima(),
       cargarSondasRipe(),
@@ -238,6 +238,9 @@ function crearMapa() {
     impacto:    L.layerGroup(),
     pulso:      L.layerGroup(),
     luzMun:     L.layerGroup(),
+    // Los puntos ciegos van en capa propia y por encima: son los que hay que
+    // ver primero y los únicos que se pueden apagar sin perder lo demás.
+    ciegos:     L.layerGroup(),
     energia:    L.layerGroup(),
     replicas:   L.layerGroup(),
     ciudades:   L.layerGroup(),
@@ -946,13 +949,21 @@ function respaldoIndependiente() {
     }
   }
 
-  if (S.luzMun && Array.isArray(S.luzMun.municipios)) {
-    const bajaron = S.luzMun.municipios.filter(
-      (m) => typeof m.cambio_pct === 'number' && m.cambio_pct <= -10).length;
+  // La capa pueblo por pueblo es independiente de IODA: sacudida y población
+  // salen de sismómetros y la luz de un satélite. Cuando IODA se cae, esto es
+  // lo único que sigue diciendo algo, y decirlo evita el «no sabemos nada».
+  if (S.lugares && Array.isArray(S.lugares.lugares)) {
+    const r = S.lugares.resumen || {};
+    const bajaron = (r.por_clase || {}).sin_luz || 0;
     trozos.push(bajaron
-      ? `<b>La luz por satélite sí se midió:</b> ${bajaron} municipio${bajaron === 1 ? '' : 's'} ` +
-        'con caída de luz nocturna. Esa capa es independiente y sigue en pie.'
-      : '<b>La luz por satélite sí se midió</b> y no marca caídas fuertes de luz nocturna.');
+      ? `<b>La luz por satélite sí se midió:</b> ${bajaron} poblado${bajaron === 1 ? '' : 's'} ` +
+        'con pérdida de luz nocturna, ya descontada la deriva del satélite.'
+      : '<b>La luz por satélite sí se midió</b> y no marca pérdidas apreciables.');
+    if (r.puntos_ciegos) {
+      trozos.push(`<b>${r.puntos_ciegos} poblados siguen sin ninguna medición</b> ` +
+        `(${nf.format(r.poblacion_en_puntos_ciegos)} personas). Eso no cambia ` +
+        'porque IODA vuelva: son sitios que nadie ha mirado.');
+    }
   }
 
   if (!trozos.length) return '';
@@ -1507,88 +1518,173 @@ function marcaEstado(tipo, nivel, etiqueta, px = 28) {
   });
 }
 
-// ── Capa: energía por municipio, medida por satélite ────────────────────────
+// ── Capa: pueblo por pueblo. La vista de mayor resolución del sistema ───────
+//
+// Sustituye a la capa de luz por municipio, que solo miraba 17 ciudades del
+// catálogo y leía el satélite en crudo. Esta mira los 263 poblados que el USGS
+// confirma sacudidos, y a cada porcentaje de luz ya le viene descontada la
+// deriva del satélite. Sin esa resta, la fase de la luna y las nubes pintaban
+// 114 pueblos «sin luz» que no lo estaban.
+//
+// Lo nuevo, y lo importante: el PUNTO CIEGO. Un pueblo que tembló fuerte y del
+// que no existe ni una medición local. Antes se veía igual que uno comprobado
+// sano — que es exactamente al revés de lo que hay que mirar primero.
 
-const NIVEL_LUZ = {
-  sin_luz:    { nivel: 'sin',  et: 'Sin luz en buena parte del pueblo' },
-  poca_luz:   { nivel: 'poca', et: 'Menos luz de lo normal' },
-  muy_oscuro: { nivel: 'duda', et: 'Casi no había luz que medir' },
-  saturado:   { nivel: 'ok',   et: 'Demasiado iluminado para notar un corte parcial' },
-  mas_luz:    { nivel: 'ok',   et: 'Más luz que antes' },
-  normal:     { nivel: 'ok',   et: 'Luz como antes del sismo' },
-  sin_dato:   { nivel: 'duda', et: 'El satélite no dejó dato aquí' },
+const CLASE_LUGAR = {
+  sin_luz_y_sin_red: { tipo: 'luz', nivel: 'sin',  et: 'Sin luz y sin red' },
+  sin_luz:           { tipo: 'luz', nivel: 'sin',  et: 'Sin luz' },
+  sin_red:           { tipo: 'red', nivel: 'sin',  et: 'Sin red' },
+  punto_ciego:       { tipo: 'red', nivel: 'duda', et: 'Nadie lo ha medido' },
 };
 
-async function cargarLuzMunicipios() {
+const CERTEZA_TXT = {
+  local: 'Medido aquí mismo',
+  heredada: 'Solo se sabe el promedio de su departamento',
+  ninguna: 'Sin ninguna medición',
+};
+
+/** Los pueblos grandes se ven más. No es decoración: entre dos puntos ciegos,
+ *  el de 45.000 habitantes se atiende antes que el de 400. */
+function tamanoPorPoblacion(pob) {
+  if (!pob || pob < 5000) return 22;
+  if (pob < 20000) return 27;
+  if (pob < 60000) return 32;
+  return 38;
+}
+
+async function cargarLugares() {
   const cont = $('#luz-municipios');
   if (Almacen.modo !== 'api') {
-    if (cont) cont.innerHTML = '<p class="hint">Necesita el backend de HOPE.</p>';
+    if (cont) {
+      cont.innerHTML = '<p class="hint">Esta vista necesita el backend de HOPE: ' +
+        'cruza cuatro fuentes a la vez y una de ellas no se puede consultar ' +
+        'desde el navegador.</p>';
+    }
     return;
   }
   try {
-    const d = await cargarJSON(`${Almacen.base}/cortes/luz-municipios`);
-    S.luzMun = d;                       // evidencia de respaldo si IODA se cae
+    const d = await cargarJSON(`${Almacen.base}/mapa/lugares`);
+    S.lugares = d;
     S.capas.luzMun.clearLayers();
-    let conProblema = 0;
+    S.capas.ciegos.clearLayers();
 
-    d.municipios.forEach((m) => {
-      const n = NIVEL_LUZ[m.clase] || NIVEL_LUZ.sin_dato;
-      // Los municipios en su estado normal no se marcan: llenar el mapa de
-      // bombillas verdes tapa justo lo que hay que ver.
-      if (m.clase === 'normal' || m.clase === 'saturado' || m.clase === 'mas_luz') return;
-      conProblema++;
-      L.marker([m.lat, m.lon], { icon: marcaEstado('luz', n.nivel, m.nombre) })
-        .bindPopup(popupLuz(m, n, d), { maxWidth: 320 })
-        .addTo(S.capas.luzMun);
+    let conProblema = 0;
+    let ciegos = 0;
+
+    d.lugares.forEach((l) => {
+      const c = CLASE_LUGAR[l.clase];
+      // Los pueblos sin novedad no se marcan. Llenar el mapa de iconos verdes
+      // tapa justo lo que hay que ver.
+      if (!c) return;
+      const px = tamanoPorPoblacion(l.poblacion);
+      const capa = l.clase === 'punto_ciego' ? S.capas.ciegos : S.capas.luzMun;
+      if (l.clase === 'punto_ciego') ciegos++; else conProblema++;
+
+      L.marker([l.lat, l.lon], { icon: marcaEstado(c.tipo, c.nivel, l.nombre, px) })
+        .bindPopup(popupLugar(l, c, d), { maxWidth: 340 })
+        .addTo(capa);
     });
 
     actualizarCuenta('luzMun', conProblema);
-    pintarPanelLuz(d, cont);
+    actualizarCuenta('ciegos', ciegos);
+    pintarPanelLugares(d, cont);
     repintarSiFaltanMediciones();
   } catch (e) {
     if (cont) cont.innerHTML = `<p class="hint err">No se pudo medir: ${escapar(e.message)}</p>`;
   }
 }
 
-function popupLuz(m, n, d) {
-  const CONF = { alta: 'medida sólida', media: 'medida aceptable',
-                 baja: 'medida frágil', saturada: 'no distingue',
-                 sin_dato: 'sin dato' };
+function popupLugar(l, c, d) {
+  const luz = l.luz;
+  const filas = [];
+
+  filas.push(['Cuánto tembló',
+    `MMI ${l.mmi.toFixed(1)} — ${descripcionMMI(Math.round(l.mmi))}`]);
+  filas.push(['Cuánta gente', nf.format(l.poblacion) + ' hab.']);
+
+  if (luz && luz.utilizable) {
+    filas.push(['Luz nocturna',
+      `${luz.cambio_pct}% frente a pueblos que apenas temblaron`]);
+  } else if (luz) {
+    filas.push(['Luz nocturna', 'no se puede afirmar nada']);
+  }
+
+  if (l.red_local) {
+    filas.push(['Sonda física',
+      `${l.red_local.cuantas} a ${l.red_local.km_mas_cerca} km — ` +
+      (l.red_local.hay_internet_confirmado ? 'responde' : 'no responden')]);
+  }
+  if (l.red_departamento) {
+    filas.push(['Red del departamento',
+      `${escapar(l.departamento)}: ${escapar(l.red_departamento.clase || 's/d')}`]);
+  }
+
+  const necesita = l.necesita_texto
+    ? `<div class="popup-necesita"><b>Qué haría falta:</b> ${escapar(l.necesita_texto)}</div>`
+    : '';
+
   return `
-    <h3>${escapar(m.nombre)}</h3>
-    <div style="color:${COLOR_ESTADO[n.nivel]};font-weight:600">${escapar(n.et)}</div>
+    <h3>${escapar(l.nombre)}${l.departamento ? ', ' + escapar(l.departamento) : ''}</h3>
+    <div style="color:${COLOR_ESTADO[c.nivel]};font-weight:600">${escapar(l.etiqueta)}</div>
     <dl style="margin-top:8px">
-      <dt>Luz antes del sismo</dt><dd>${m.luz_base ?? 's/d'}</dd>
-      <dt>Luz ahora</dt><dd>${m.luz_ahora ?? 's/d'}</dd>
-      <dt>Cambio</dt><dd>${m.cambio_pct !== null ? m.cambio_pct + '%' : 's/d'}</dd>
-      <dt>Confianza</dt><dd>${escapar(CONF[m.confianza] || m.confianza)}</dd>
+      ${filas.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}
+      <dt>Certeza</dt><dd>${escapar(CERTEZA_TXT[l.certeza] || l.certeza)}</dd>
     </dl>
-    <div style="margin-top:8px">${escapar(m.lectura)}</div>
-    <div class="hint" style="margin-top:8px">Satélite VIIRS, resolución ${d.resolucion_m} m.
-      Compara las noches ${escapar(d.noches_despues.join(' y '))} contra
-      ${escapar(d.noches_base.join(', '))}, todas anteriores al sismo.</div>`;
+    ${luz && luz.lectura ? `<div style="margin-top:8px">${escapar(luz.lectura)}</div>` : ''}
+    ${necesita}
+    <div class="hint" style="margin-top:8px">Sacudida y población: USGS PAGER.
+      Luz: satélite VIIRS con la deriva (${d.deriva_luz.valor_pct}%) ya descontada.
+      Red: IODA, que no baja del departamento.</div>`;
 }
 
-function pintarPanelLuz(d, cont) {
+function pintarPanelLugares(d, cont) {
   if (!cont) return;
-  const malos = d.municipios.filter((m) => m.clase === 'sin_luz' || m.clase === 'poca_luz');
-  const ciegos = d.municipios.filter((m) => m.clase === 'muy_oscuro' || m.clase === 'sin_dato');
+  const r = d.resumen;
+  const ciegos = d.lugares.filter((l) => l.clase === 'punto_ciego');
+  const malos = d.lugares.filter((l) => l.clase === 'sin_luz' ||
+                                        l.clase === 'sin_luz_y_sin_red' ||
+                                        l.clase === 'sin_red');
 
-  cont.innerHTML = (malos.length
-    ? malos.map((m) => {
-        const n = NIVEL_LUZ[m.clase];
-        return `<div class="fila-luz">
-          <span class="ico-mini">${iconoEstado('luz', n.nivel, 22)}</span>
-          <span class="nom">${escapar(m.nombre)}</span>
-          <span class="cambio">${m.cambio_pct}%</span>
-          ${m.confianza === 'baja' ? '<span class="frag">frágil</span>' : ''}
-        </div>`;
-      }).join('')
-    : '<p class="hint">Ningún municipio del catálogo perdió luz de forma apreciable.</p>') +
-    (ciegos.length
-      ? `<p class="hint">Sin poder medir: ${ciegos.map((m) => escapar(m.nombre)).join(', ')}.</p>`
-      : '') +
-    `<p class="hint">${escapar(d.limites[0])}</p>`;
+  const fila = (l, marca) => `
+    <div class="fila-luz">
+      <span class="ico-mini">${iconoEstado(marca.tipo, marca.nivel, 22)}</span>
+      <span class="nom">${escapar(l.nombre)}</span>
+      <span class="cambio">${nf.format(l.poblacion)} hab.</span>
+    </div>`;
+
+  let html = '';
+
+  if (ciegos.length) {
+    html += `<p class="titular-ciegos"><b>${ciegos.length} pueblos temblaron fuerte
+      y nadie los ha medido.</b> Viven allí ${nf.format(r.poblacion_en_puntos_ciegos)}
+      personas. No es que estén bien: es que no hay dato.</p>` +
+      ciegos.slice(0, 10).map((l) => fila(l, CLASE_LUGAR.punto_ciego)).join('') +
+      (ciegos.length > 10 ? `<p class="hint">y ${ciegos.length - 10} más en el mapa.</p>` : '');
+  }
+
+  if (malos.length) {
+    html += `<p class="hint" style="margin-top:12px"><b>Con pérdida medida:</b></p>` +
+      malos.slice(0, 8).map((l) => fila(l, CLASE_LUGAR[l.clase])).join('') +
+      (malos.length > 8 ? `<p class="hint">y ${malos.length - 8} más en el mapa.</p>` : '');
+  }
+
+  if (!html) html = '<p class="hint">Ningún poblado con pérdida medible ni sin medición en esta consulta.</p>';
+
+  html += `<p class="hint">Se evaluaron ${nf.format(r.lugares)} poblados
+    (${nf.format(r.poblacion_expuesta)} personas expuestas). Solo
+    ${nf.format(r.medidos_localmente)} tienen medición <b>local</b>; del resto
+    únicamente se conoce el promedio de su departamento, que no distingue un
+    pueblo de otro.</p>`;
+
+  if (d.deriva_luz && d.deriva_luz.valor_pct !== null) {
+    html += `<p class="hint">A los porcentajes de luz se les descontó
+      ${d.deriva_luz.valor_pct}%, que es lo que bajó la luz en
+      ${d.deriva_luz.poblados_de_control} pueblos que apenas temblaron. Ese
+      trozo es luna y nubes, no apagón: sin restarlo, medio país aparecería
+      a oscuras.</p>`;
+  }
+
+  cont.innerHTML = html;
 }
 
 // ── Panel: estado por operador ──────────────────────────────────────────────
@@ -2424,7 +2520,8 @@ function construirControlCapas() {
     ['impacto',    'Danos reportados (prensa)','#c92a2a'],
     ['mancha',     'Fuerza del sismo (USGS)',  '#ff9100'],
     ['pulso',      'Sin internet (por zona)',  '#e03131'],
-    ['luzMun',     'Sin luz (por municipio)',  '#f59f00'],
+    ['ciegos',     'Puntos ciegos (sin medir)','#9c36b5'],
+    ['luzMun',     'Sin luz (por poblado)',    '#f59f00'],
     ['luces',      'Luces nocturnas (VIIRS)',  '#ffd60a'],
     ['zonas',      'Zonas reportadas',         '#ff3b30'],
     ['aportes',    'Recursos ofrecidos',       '#34c759'],

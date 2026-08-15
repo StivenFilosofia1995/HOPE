@@ -364,7 +364,48 @@ data/hope.db            Local, se crea sola. No versionar: tiene datos personale
 | `GET` | `/api/reportes.geojson` | Descarga para entrega (QGIS, ArcGIS, Google Earth) |
 | `GET` | `/api/reportes.csv` | Descarga para Excel (con BOM) |
 | `GET` | `/api/estadisticas` | Conteos por tipo/prioridad/estado |
-**Tiempo real — es la vista principal:**
+**Pueblo por pueblo — la vista de mayor resolución:**
+
+| Método | Ruta | |
+|---|---|---|
+| `GET` | `/api/mapa/lugares?mmi_min=5&horas=3` | **Los 263 poblados** que el USGS confirma sacudidos, cada uno con población, intensidad medida ahí mismo, luz por satélite, sondas físicas y red del departamento — y **con qué certeza** se afirma cada cosa |
+
+Rompe el techo del departamento usando el producto PAGER del USGS, que publica
+cada poblado expuesto con su población y la sacudida interpolada en ese punto.
+De ahí sale la categoría que faltaba y que es la más accionable: el **punto
+ciego**, un pueblo que tembló fuerte y del que no existe ninguna medición
+local. Medidos: 23 poblados y 325.333 personas, entre ellos el epicentro.
+Un punto ciego no es un pueblo sin problemas — es uno sin datos.
+
+A los porcentajes de luz se les descuenta la **deriva del satélite** (−6,8%
+medido contra 376 poblados que apenas temblaron): sin esa resta, la fase lunar
+y las nubes marcaban 114 pueblos «sin luz» que no lo estaban. Ver FUENTES.md §8.
+
+**Pedir conectividad (`/enlaces.html`):**
+
+| Método | Ruta | |
+|---|---|---|
+| `GET` | `/api/enlaces/destinatarios` | Directorio: 20 organizaciones, **y por qué vía se le pide a cada una** |
+| `POST` | `/api/enlaces/cartas` | Redacta las 20 cartas con la evidencia medida ahora dentro |
+| `POST` | `/api/enlaces/paquete.zip` | Todas como archivos `.eml`, listos para arrastrar al correo |
+
+Lo que hace útil el directorio no es la lista de correos: es saber **quién
+puede pedirle qué a quién**. La UIT despliega terminales satelitales en 24–48 h
+pero **solo a petición de un Estado miembro**, así que escribirle como
+particular no activa nada — la carta que sirve es la que va al MinTIC. Starlink
+dona a organizaciones ya verificadas, no a personas, y por eso la Cruz Roja
+Colombiana es la llave de esa puerta.
+
+Ninguna de estas rutas envía ni guarda nada: redactan texto y lo devuelven. Los
+datos del remitente viajan solo para firmar la carta y no tocan la base ni el
+log. **El envío lo hace la persona desde su propio correo, a propósito:** una
+carta con un nombre y un teléfono detrás la lee alguien; un envío masivo desde
+un servidor desconocido cae en el filtro corporativo y quema el único contacto
+que hay. Los contactos que no se pudieron verificar van marcados como tales,
+con su canal oficial — no se inventa ninguna dirección, porque una carta a un
+correo adivinado no rebota: se pierde en silencio.
+
+**Tiempo real — por zona:**
 
 | Método | Ruta | |
 |---|---|---|

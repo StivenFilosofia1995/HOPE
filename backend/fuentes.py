@@ -1694,3 +1694,527 @@ def radar_cloudflare(dias: int = 7) -> dict:
 
     _cache_guardar(clave, salida)
     return salida
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  PRECISIÓN: de 8 departamentos a cientos de poblados
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# El límite más duro de todo el sistema era la RESOLUCIÓN. IODA no baja del
+# departamento y XM publica por área operativa: con eso, «Chocó está mal» era
+# todo lo que se podía decir, y Chocó son 46.500 km². Nadie lleva un enlace
+# satelital a un departamento; lo lleva a un pueblo.
+#
+# Lo que rompe ese techo es un producto del USGS que ya estaba ahí y no se
+# estaba usando: PAGER publica `json/cities.json` con TODOS los poblados
+# expuestos al evento, cada uno con su población y con la intensidad de
+# sacudida interpolada EN ESE PUNTO desde el ShakeMap. Para este sismo son 624
+# lugares, 263 de ellos sacudidos a MMI 5 o más. No es una estimación nuestra:
+# es el mismo cálculo con el que el USGS emitió su alerta roja.
+#
+# Con esa rejilla de lugares reales, cada fuente aporta lo que de verdad puede:
+#
+#   sacudida  → MMI del ShakeMap en el punto exacto          · LOCAL
+#   gente     → población del poblado                        · LOCAL
+#   luz       → Black Marble, píxel de ~610 m sobre el casco · LOCAL
+#   red       → sonda RIPE Atlas si hay una cerca            · LOCAL (punto físico)
+#   red       → IODA del departamento que lo contiene        · HEREDADA
+#
+# Y aquí está lo que ninguna capa anterior decía: cada lugar lleva escrito CON
+# QUÉ CERTEZA se afirma lo que se afirma de él. Un pueblo medido y un pueblo
+# del que solo sabemos el promedio de su departamento no son el mismo dato, y
+# pintarlos igual es la forma más rápida de mandar ayuda al sitio equivocado.
+#
+# De ahí sale la categoría que faltaba, y es la más accionable de todas: el
+# PUNTO CIEGO — un pueblo que el USGS confirma que tembló fuerte, con gente
+# dentro, y del que no existe ni una sola medición local. No es que esté bien.
+# Es que nadie lo ha mirado.
+
+PAGER_MMI_MIN = 5.0      # MMI 5: lo siente todo el mundo, se caen objetos
+USGS_EVENTO = "us6000tjl2"
+
+# Radio dentro del cual una sonda RIPE dice algo del poblado. Una sonda mide SU
+# propia conexión: a 10 km comparte central y operador; a 80 km es otra ciudad.
+RADIO_SONDA_KM = 25
+
+# ── La deriva del satélite, y por qué hay que restarla ─────────────────────
+#
+# Medido el 2026-08-15 sobre los 537 poblados expuestos: la luz nocturna había
+# bajado una MEDIANA DE -12% RESPECTO A ANTES DEL SISMO... en todas partes.
+# También donde apenas se sintió el temblor:
+#
+#     MMI 4,9-5,5   -8,2 %      MMI 6,5-7,0   -17,6 %
+#     MMI 5,5-6,0  -12,3 %      MMI 7,0-8,5   -13,6 %
+#     MMI 6,0-6,5  -16,6 %
+#
+# Leer eso en crudo habría pintado 114 pueblos «sin luz», y habría sido falso:
+# a MMI 5 no se cae un poste. Ese -8% de fondo es la fase de la luna, la
+# nubosidad y el relleno por modelo del producto, no electricidad. El propio
+# archivo de HOPE ya documenta esa trampa en la banda cruda; resulta que el
+# producto corregido la reduce, pero no la elimina.
+#
+# La corrección es la misma idea que ya se usa con IODA —comparar contra un
+# testigo que cancele lo que no interesa— aplicada al espacio en vez de al
+# tiempo: los poblados que apenas temblaron son el GRUPO DE CONTROL. Lo que
+# les pasó a ellos le pasó al satélite, no al sismo. Se resta esa mediana y lo
+# que sobra es lo que de verdad se sale de lo normal.
+#
+# Con eso, el gradiente de arriba deja de ser «todo el país a oscuras» y pasa a
+# ser lo que siempre fue: unos pocos puntos por debajo de sus vecinos.
+MMI_CONTROL = 4.0        # se miden desde aquí, aunque no se muestren
+DERIVA_MMI_MAX = 4.5     # por debajo de esto el sismo no rompió infraestructura
+CONTROL_MINIMO = 20      # menos poblados de control y la mediana no es fiable
+
+# Confianzas con las que un porcentaje de luz significa algo. `baja` es un
+# pueblo que parte de tan poca luz medible que dos o tres unidades ya mueven el
+# porcentaje entero; `saturada` es una ciudad tan iluminada que la medida topa.
+# Ninguna de las dos sirve para afirmar un apagón NI para descartar uno, así
+# que tampoco cuentan como «este sitio ya está medido».
+CONFIANZA_UTIL = ("media", "alta")
+
+
+def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Distancia en km sobre la esfera (haversine)."""
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _producto_usgs(nombre: str) -> dict:
+    """Contenidos de un producto del evento, resolviendo su URL versionada.
+
+    Las URL de los productos del USGS llevan un sello de versión que cambia
+    cada vez que reprocesan el evento. Cablearlas es garantizar un 404 la
+    próxima vez que el USGS actualice el ShakeMap, así que se resuelven siempre
+    desde el detalle del evento.
+    """
+    det = _get(f"{USGS}?format=geojson&eventid={USGS_EVENTO}")
+    lista = ((det.get("properties") or {}).get("products") or {}).get(nombre) or []
+    if not lista:
+        raise RuntimeError(f"el evento {USGS_EVENTO} no publica el producto {nombre}")
+    return lista[0].get("contents") or {}
+
+
+def usgs_lugares(mmi_min: float = PAGER_MMI_MIN) -> dict:
+    """Poblados expuestos al sismo, con población y sacudida en el punto.
+
+    Del producto PAGER del USGS (`json/cities.json`). Cada entrada trae la
+    intensidad Mercalli interpolada desde el ShakeMap en esa coordenada, no la
+    del departamento: es el dato de mayor resolución espacial de todo HOPE, y
+    el único que no depende de que ninguna red siga en pie, porque se calculó
+    con sismómetros.
+    """
+    clave = f"pager_lugares:{mmi_min}"
+    if (c := _cache_leer(clave, 12 * 3600)) is not None:
+        return c
+
+    contenidos = _producto_usgs("losspager")
+    entrada = contenidos.get("json/cities.json") or contenidos.get("cities.json")
+    if not entrada or not entrada.get("url"):
+        raise RuntimeError("PAGER no publicó cities.json para este evento")
+
+    crudo = _get(entrada["url"])
+    todos = crudo.get("all_cities") or []
+
+    lugares = []
+    for c_ in todos:
+        try:
+            mmi = float(c_.get("mmi"))
+            lat, lon = float(c_["lat"]), float(c_["lon"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if mmi < mmi_min:
+            continue
+        lugares.append({
+            "nombre": (c_.get("name") or "").strip(),
+            "lat": lat, "lon": lon,
+            "poblacion": int(c_.get("pop") or 0),
+            "mmi": round(mmi, 2),
+            "es_capital": bool(c_.get("iscap")),
+        })
+
+    lugares.sort(key=lambda x: (-x["mmi"], -x["poblacion"]))
+    res = {
+        "fuente": "USGS PAGER — exposición por poblado (cities.json)",
+        "evento": USGS_EVENTO,
+        "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "mmi_min": mmi_min,
+        "total": len(lugares),
+        "total_catalogo": len(todos),
+        "poblacion_expuesta": sum(l["poblacion"] for l in lugares),
+        "como_leer": (
+            "La intensidad (MMI) de cada lugar la interpola el USGS desde el "
+            "ShakeMap EN ESA COORDENADA. Es sacudida medida con sismómetros, no "
+            "un promedio departamental, y no depende de que la red siga en pie. "
+            "La población es la del poblado, no la del municipio entero."
+        ),
+        "lugares": lugares,
+    }
+    _cache_guardar(clave, res)
+    return res
+
+
+def _nombres_bonitos(lugares: list[dict], catalogo: list[dict]) -> None:
+    """PAGER escribe sin tildes: Quibdo, Tado, San Jose del Palmar. Si el
+    poblado coincide con uno del catálogo propio, se usa el nombre bien
+    escrito. Es cosmético, pero un parte oficial que dice «Tado» se lee como si
+    lo hubiera escrito alguien que no conoce el país."""
+    for l in lugares:
+        for c in catalogo:
+            if _km(l["lat"], l["lon"], c["lat"], c["lon"]) <= 6:
+                l["nombre"] = c["nombre"]
+                if c.get("departamento"):
+                    l["departamento_catalogo"] = c["departamento"]
+                break
+
+
+# Orden de atención. Como `RANGO_CLASE`, es un ordenamiento de evidencia y no
+# un algoritmo de asignación: dentro de cada clase manda la población.
+RANGO_LUGAR = {
+    "sin_luz_y_sin_red": 0,
+    "sin_luz": 1,
+    "sin_red": 2,
+    "punto_ciego": 3,
+    "solo_heredado": 4,
+    "medido_sin_novedad": 5,
+}
+
+ETIQUETA_LUGAR = {
+    "sin_luz_y_sin_red": "Sin luz y sin red",
+    "sin_luz": "Sin luz",
+    "sin_red": "Sin red",
+    "punto_ciego": "Punto ciego: nadie lo ha medido",
+    "solo_heredado": "Solo se sabe lo de su departamento",
+    "medido_sin_novedad": "Medido, sin novedad",
+}
+
+NECESIDAD_TEXTO = {
+    "ENERGIA": "Planta eléctrica y combustible. La fibra está sana; sin luz no "
+               "prende el router.",
+    "RED": "Cuadrilla del operador o enlace satelital: el problema es de red, "
+           "no de energía.",
+    "ENERGIA_Y_RED": "Energía y enlace: perdió la luz y no hay red que responda.",
+    "ENLACE": "Enlace satelital autónomo, con su propia energía. No es que esté "
+              "bien: es que nadie ha medido nada aquí.",
+}
+
+
+def _que_hace_falta(clase: str, red_zona: Optional[dict]) -> str:
+    """Traduce el estado a lo único que decide qué se carga en el camión:
+    ¿planta y combustible, cuadrilla de red, o un enlace autónomo porque no
+    sabemos ni qué hay?"""
+    if clase == "punto_ciego":
+        return "ENLACE"
+    # Si el troncal del departamento aguanta, la fibra está sana y falta luz.
+    ultima_milla = bool(red_zona and
+                        str(red_zona.get("clase", "")).startswith("ultima_milla"))
+    if clase == "sin_luz_y_sin_red":
+        return "ENERGIA" if ultima_milla else "ENERGIA_Y_RED"
+    if clase == "sin_luz":
+        return "ENERGIA"
+    if clase == "sin_red":
+        return "ENERGIA" if ultima_milla else "RED"
+    return ""
+
+
+def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
+                   noches: int = 3) -> dict:
+    """Estado poblado por poblado, fusionando todas las fuentes del sistema.
+
+    Cada lugar lleva escrito con qué certeza se afirma lo suyo:
+
+      · `local`     — se midió en ese punto: satélite sobre el casco urbano,
+                      o sonda física a menos de 25 km.
+      · `heredada`  — solo se sabe lo del departamento que lo contiene. Es
+                      contexto; no dice nada de este pueblo en concreto.
+      · `ninguna`   — tembló fuerte y nadie lo ha medido. Punto ciego.
+
+    Ninguna fuente caída tumba el resultado: lo que las demás sí midieron se
+    entrega igual, y lo que faltó se dice que faltó.
+    """
+    clave = f"mapa_precision:{mmi_min}:{horas}:{noches}"
+    if (c := _cache_leer(clave, 900)) is not None:
+        return c
+
+    fallos: dict[str, str] = {}
+
+    # 1. La rejilla de lugares. Sin ella no hay nada que fusionar: es la única
+    #    fuente cuyo fallo sí es fatal para esta vista.
+    #
+    #    Se piden desde MMI 4 aunque se vayan a mostrar desde MMI 5: los que
+    #    apenas temblaron son el grupo de control con el que se mide la deriva
+    #    del satélite. Sin ellos no hay contra qué comparar y el -12% de fondo
+    #    se leería como apagón nacional. Cuestan siete teselas más.
+    base = usgs_lugares(min(mmi_min, MMI_CONTROL))
+    lugares = [dict(l) for l in base["lugares"]]
+
+    # 2. Nombres legibles y departamento por POLÍGONO real, no por centroide
+    #    más cercano: con centroides, una sonda de Medellín caía en Caldas.
+    try:
+        ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "web", "data", "ciudades.json")
+        with open(ruta, encoding="utf-8") as f:
+            _nombres_bonitos(lugares, json.load(f).get("ciudades", []))
+    except Exception:
+        pass
+
+    for l in lugares:
+        cod = departamento_de(l["lat"], l["lon"])
+        l["codigo_depto"] = cod
+        l["departamento"] = (DEPARTAMENTOS.get(cod, {}).get("nombre")
+                             or l.get("departamento_catalogo") or "")
+        l.pop("departamento_catalogo", None)
+
+    # 3. Red por departamento (IODA). Es lo que hay: no baja de departamento.
+    #    Va marcada como HEREDADA en cada lugar para que nadie la lea como local.
+    red_por_depto: dict[int, dict] = {}
+    try:
+        for z in pulso_vivo(horas).get("zonas", []):
+            red_por_depto[z["codigo"]] = {
+                "clase": z.get("clase"),
+                "diagnostico": z.get("diagnostico"),
+                "delta_acceso_pct": (z.get("acceso") or {}).get("delta_pct"),
+                "delta_troncal_pct": (z.get("troncal") or {}).get("delta_pct"),
+            }
+    except Exception as e:
+        fallos["red_departamento"] = f"{type(e).__name__}: {e}"
+
+    # 4. Luz por poblado (satélite, ~610 m). La única medición verdaderamente
+    #    local de energía que existe sin esperar los dos días de rezago de XM.
+    luz_por_lugar: dict[tuple, dict] = {}
+    try:
+        medidos = luces_municipios(
+            [{"nombre": l["nombre"], "departamento": l["departamento"],
+              "lat": l["lat"], "lon": l["lon"]} for l in lugares], noches)
+        for m in medidos.get("municipios", []):
+            luz_por_lugar[(round(m["lat"], 4), round(m["lon"], 4))] = m
+    except Exception as e:
+        fallos["luz_satelital"] = f"{type(e).__name__}: {e}"
+
+    # 5. Sondas físicas. Una sonda conectada es la prueba más dura de que en ese
+    #    punto hay internet AHORA: es un aparato hablando con RIPE ahora mismo.
+    sondas: list[dict] = []
+    try:
+        sondas = ripe_atlas_colombia().get("sondas", [])
+    except Exception as e:
+        fallos["sondas"] = f"{type(e).__name__}: {e}"
+
+    # 6. La deriva del satélite, medida con los poblados que apenas temblaron.
+    #    Ver el bloque de arriba: sin restarla, el -12% de fondo pinta como
+    #    apagón medio país. Solo entran confianzas útiles, porque un pueblo que
+    #    parte de casi nada de luz mete ruido enorme en la mediana.
+    control = sorted(
+        m["cambio_pct"] for cl, m in
+        ((luz_por_lugar.get((round(l["lat"], 4), round(l["lon"], 4))), l)
+         for l in lugares)
+        for m in [cl] if m
+        if l["mmi"] < DERIVA_MMI_MAX
+        and m.get("cambio_pct") is not None
+        and m.get("confianza") in CONFIANZA_UTIL)
+
+    if len(control) >= CONTROL_MINIMO:
+        n = len(control)
+        deriva = (control[n // 2] if n % 2
+                  else (control[n // 2 - 1] + control[n // 2]) / 2)
+        deriva = round(deriva, 1)
+    else:
+        # Sin control suficiente no se puede separar apagón de fase lunar. Se
+        # dice, y la luz deja de usarse para clasificar. Un «no sé» honesto vale
+        # más que 114 pueblos pintados de rojo por culpa de la luna.
+        deriva = None
+        fallos["deriva_luz"] = (
+            f"Solo {len(control)} poblados de control con medida utilizable "
+            f"(hacen falta {CONTROL_MINIMO}). Sin ellos no se puede separar un "
+            f"apagón de un cambio de luna o de nubosidad, así que la capa de "
+            f"luz no se usa para clasificar en esta consulta.")
+
+    def leer_luz(m: Optional[dict]) -> Optional[dict]:
+        """Traduce la medida cruda del satélite a algo afirmable, ya sin deriva.
+
+        Devuelve `utilizable: False` cuando el número existe pero no significa
+        nada — que es distinto de que no haya número, y muy distinto de que el
+        pueblo esté bien.
+        """
+        if not m:
+            return None
+        crudo = m.get("cambio_pct")
+        conf = m.get("confianza")
+        if crudo is None or deriva is None or conf not in CONFIANZA_UTIL:
+            motivo = ("El satélite no dejó observación utilizable aquí."
+                      if crudo is None else
+                      "No hay grupo de control para descontar la deriva del "
+                      "satélite en esta consulta." if deriva is None else
+                      "Este poblado parte de muy poca luz medible (o satura), "
+                      "así que su porcentaje no es concluyente ni en un sentido "
+                      "ni en el otro.")
+            return {"utilizable": False, "clase": "no_medible",
+                    "cambio_bruto_pct": crudo, "confianza": conf,
+                    "lectura": motivo + " No se puede afirmar que tenga luz, ni "
+                                        "que no la tenga."}
+
+        ajustado = round(crudo - deriva, 1)
+        if ajustado <= -35:
+            clase_luz, lectura = "sin_luz", (
+                f"Perdió {abs(ajustado):.0f}% más luz que los pueblos que apenas "
+                f"temblaron. Compatible con un apagón extenso.")
+        elif ajustado <= -15:
+            clase_luz, lectura = "poca_luz", (
+                f"Perdió {abs(ajustado):.0f}% más luz que los pueblos que apenas "
+                f"temblaron. Compatible con un apagón parcial o por sectores.")
+        elif ajustado >= 15:
+            clase_luz, lectura = "mas_luz", (
+                f"Tiene {ajustado:.0f}% más luz que sus comparables. Puede ser "
+                f"restablecimiento, o plantas y luminarias de emergencia.")
+        else:
+            clase_luz, lectura = "normal", (
+                f"Su luz está en línea con la de los pueblos que apenas "
+                f"temblaron ({ajustado:+.0f}%).")
+
+        return {"utilizable": True, "clase": clase_luz,
+                "cambio_pct": ajustado, "cambio_bruto_pct": crudo,
+                "deriva_descontada_pct": deriva, "confianza": conf,
+                "lectura": lectura}
+
+    # ── Fusión ──────────────────────────────────────────────────────────────
+    for l in lugares:
+        luz = leer_luz(luz_por_lugar.get((round(l["lat"], 4), round(l["lon"], 4))))
+
+        cerca = sorted(((_km(l["lat"], l["lon"], s["lat"], s["lon"]), s)
+                        for s in sondas), key=lambda t: t[0])
+        cerca = [(d, s) for d, s in cerca if d <= RADIO_SONDA_KM]
+        sonda = None
+        if cerca:
+            viva = any(s["clase"] == "activa" for _, s in cerca)
+            sonda = {
+                "cuantas": len(cerca),
+                "km_mas_cerca": round(cerca[0][0], 1),
+                "hay_internet_confirmado": viva,
+                "caidas_tras_sismo": sum(1 for _, s in cerca
+                                         if s["clase"] == "caida_reciente"),
+                "lectura": ("Hay al menos una sonda física respondiendo aquí: en "
+                            "este punto sí hay internet ahora mismo."
+                            if viva else
+                            "Todas las sondas de esta zona se desconectaron "
+                            "después del sismo."),
+            }
+
+        zona = red_por_depto.get(l["codigo_depto"])
+
+        # ── Certeza: la pregunta que ninguna capa anterior respondía ────────
+        #
+        # Una medida que existe pero no es concluyente NO cuenta como medición.
+        # Si contara, un pueblo del que solo sabemos «el número salió pero no
+        # significa nada» quedaría marcado como comprobado, y dejaría de
+        # aparecer entre los que hay que ir a mirar. Es el error que hace que
+        # una zona desaparezca del mapa por exceso de datos malos.
+        luz_local = bool(luz and luz.get("utilizable"))
+        if luz_local or sonda is not None:
+            certeza = "local"
+        elif zona:
+            certeza = "heredada"
+        else:
+            certeza = "ninguna"
+
+        # ── Clasificación ──────────────────────────────────────────────────
+        perdio_luz = bool(luz and luz.get("utilizable")
+                          and luz["clase"] in ("sin_luz", "poca_luz"))
+        sin_red_local = bool(sonda and not sonda["hay_internet_confirmado"])
+        zona_caida = bool(zona and zona.get("clase") in
+                          ("troncal_caido", "ultima_milla_caida"))
+
+        if perdio_luz and (sin_red_local or zona_caida):
+            clase = "sin_luz_y_sin_red"
+        elif perdio_luz:
+            clase = "sin_luz"
+        elif sin_red_local:
+            clase = "sin_red"
+        elif certeza != "local" and l["mmi"] >= 6:
+            # Tembló fuerte y no hay UNA sola medición local. Es el caso
+            # peligroso: sin esta categoría se vería igual que un pueblo
+            # comprobado sano, que es justo lo contrario de lo que pasa.
+            clase = "punto_ciego"
+        elif certeza == "local":
+            clase = "medido_sin_novedad"
+        else:
+            clase = "solo_heredado"
+
+        necesita = _que_hace_falta(clase, zona)
+        l.update({
+            "clase": clase,
+            "etiqueta": ETIQUETA_LUGAR[clase],
+            "certeza": certeza,
+            "necesita": necesita,
+            "necesita_texto": NECESIDAD_TEXTO.get(necesita, ""),
+            "luz": luz,
+            "red_local": sonda,
+            "red_departamento": zona,
+        })
+
+    # Los poblados de control ya cumplieron su función (dar la deriva) y no se
+    # muestran: no temblaron lo suficiente como para ocupar un renglón en una
+    # lista que se lee para decidir a dónde ir.
+    lugares = [l for l in lugares if l["mmi"] >= mmi_min]
+    lugares.sort(key=lambda l: (RANGO_LUGAR.get(l["clase"], 9), -l["poblacion"]))
+
+    ciegos = [l for l in lugares if l["clase"] == "punto_ciego"]
+    conteo: dict[str, int] = {}
+    gente: dict[str, int] = {}
+    for l in lugares:
+        conteo[l["clase"]] = conteo.get(l["clase"], 0) + 1
+        gente[l["clase"]] = gente.get(l["clase"], 0) + l["poblacion"]
+
+    res = {
+        "fuentes": [
+            "USGS PAGER / ShakeMap — poblados, población y sacudida (LOCAL)",
+            "NASA VIIRS Black Marble vía GIBS — luz nocturna ~610 m (LOCAL)",
+            "RIPE Atlas — sondas físicas individuales (LOCAL)",
+            "IODA (Georgia Tech) — red por departamento (HEREDADA)",
+        ],
+        "consultado": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "parametros": {"mmi_min": mmi_min, "horas": horas, "noches": noches,
+                       "radio_sonda_km": RADIO_SONDA_KM},
+        "deriva_luz": {
+            "valor_pct": deriva,
+            "poblados_de_control": len(control),
+            "mmi_maximo_control": DERIVA_MMI_MAX,
+            "que_es": (
+                "Cuánto bajó la luz nocturna en los poblados que apenas "
+                "temblaron. Como allí no se cayó nada, ese cambio es del "
+                "satélite —fase lunar, nubes, relleno por modelo— y no del "
+                "sismo. Se le resta a todos los demás; los porcentajes de cada "
+                "lugar ya vienen con la resta hecha."
+                if deriva is not None else
+                "No se pudo medir: sin ella, la capa de luz no se usa para "
+                "clasificar y los lugares quedan como no medidos."),
+        },
+        "fallos": fallos,
+        "resumen": {
+            "lugares": len(lugares),
+            "poblacion_expuesta": sum(l["poblacion"] for l in lugares),
+            "por_clase": conteo,
+            "poblacion_por_clase": gente,
+            "medidos_localmente": sum(1 for l in lugares if l["certeza"] == "local"),
+            "solo_heredado": sum(1 for l in lugares if l["certeza"] == "heredada"),
+            "sin_ninguna_medicion": sum(1 for l in lugares if l["certeza"] == "ninguna"),
+            "puntos_ciegos": len(ciegos),
+            "poblacion_en_puntos_ciegos": sum(l["poblacion"] for l in ciegos),
+        },
+        "como_leer": (
+            "Cada lugar dice con qué CERTEZA se afirma lo suyo. `local` = se "
+            "midió en ese punto. `heredada` = solo se sabe el promedio de su "
+            "departamento, que no dice nada de este pueblo. `ninguna` = tembló "
+            "fuerte y nadie lo ha mirado. Un punto ciego NO es un lugar sin "
+            "problemas: es un lugar sin datos, y suele ser lo contrario."
+        ),
+        "advertencia": (
+            "Ordenamiento de evidencia, no plan de despliegue. La sacudida y la "
+            "población son del USGS y son firmes; la luz es satelital y la "
+            "arruinan las nubes; la red por departamento no distingue un pueblo "
+            "de otro. Confirmar con el CMGRD del municipio antes de mover nada."
+        ),
+        "lugares": lugares,
+    }
+    _cache_guardar(clave, res)
+    return res

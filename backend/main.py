@@ -36,7 +36,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from . import fuentes
+from . import enlaces, fuentes
 
 # ── Rutas ───────────────────────────────────────────────────────────────────
 
@@ -598,6 +598,35 @@ def cortes_prioridad(horas: int = Query(96, ge=1, le=720)) -> dict:
         raise HTTPException(502, f"Fuentes no disponibles: {type(e).__name__}: {e}")
 
 
+@app.get("/api/mapa/lugares", tags=["cortes"])
+def mapa_lugares(
+    mmi_min: float = Query(5.0, ge=3.0, le=9.0),
+    horas: int = Query(3, ge=1, le=48),
+    noches: int = Query(3, ge=1, le=7),
+) -> dict:
+    """**Poblado por poblado.** La vista de mayor resolución del sistema.
+
+    Rompe el techo del departamento: el producto PAGER del USGS publica cada
+    poblado expuesto con su población y con la sacudida interpolada EN ESE
+    PUNTO desde el ShakeMap. Sobre esa rejilla se cruzan la luz por satélite
+    (~610 m), las sondas físicas de RIPE y la red por departamento de IODA.
+
+    Cada lugar dice con qué CERTEZA se afirma lo suyo: `local` (medido ahí),
+    `heredada` (solo el promedio de su departamento) o `ninguna`. De ahí sale
+    la categoría que no existía y que es la más accionable: el **punto ciego**,
+    un pueblo que el USGS confirma que tembló fuerte y que nadie ha medido.
+    Un punto ciego no es un pueblo sin problemas: es uno sin datos.
+
+    Los porcentajes de luz vienen con la deriva del satélite ya descontada,
+    medida contra los poblados que apenas temblaron. Sin esa resta, el −7% de
+    fondo por fase lunar y nubes pintaría medio país como apagado.
+    """
+    try:
+        return fuentes.mapa_precision(mmi_min, horas, noches)
+    except Exception as e:
+        raise HTTPException(502, f"No se pudo construir la vista: {type(e).__name__}: {e}")
+
+
 @app.get("/api/cortes/sondas", tags=["cortes"])
 def cortes_sondas() -> dict:
     """Sondas RIPE Atlas: puntos individuales reales con coordenadas exactas,
@@ -633,6 +662,87 @@ def clima() -> dict:
         return fuentes.clima_zonas_afectadas()
     except Exception as e:
         raise HTTPException(502, f"Open-Meteo no respondió: {type(e).__name__}: {e}")
+
+
+# ── Sala de enlaces: pedir conectividad con evidencia medida ────────────────
+#
+# Estas rutas NO envían nada y NO guardan nada. Redactan texto a partir de una
+# consulta hecha en el momento y lo devuelven. Por eso no exigen HOPE_TOKEN:
+# no hay estado que proteger, y ponerle llave solo impediría que alguien en la
+# zona se apoyara en ellas.
+#
+# Los datos del remitente (nombre, teléfono, correo) viajan en la petición para
+# firmar la carta y NO se persisten en ningún sitio: no tocan la base, no van
+# al log de la aplicación y no salen de la respuesta que se devuelve.
+
+class Remitente(BaseModel):
+    nombre: str = Field("", max_length=120)
+    cargo: str = Field("", max_length=120)
+    organizacion: str = Field("", max_length=160)
+    ciudad: str = Field("", max_length=120)
+    telefono: str = Field("", max_length=60)
+    correo: str = Field("", max_length=160)
+
+
+class PeticionCartas(BaseModel):
+    remitente: Remitente = Remitente()
+    destinatarios: Optional[list[str]] = None
+    url_mapa: str = Field("", max_length=300)
+    mmi_min: float = Field(5.0, ge=3.0, le=9.0)
+    horas: int = Field(3, ge=1, le=48)
+
+
+@app.get("/api/enlaces/destinatarios", tags=["enlaces"])
+def enlaces_destinatarios() -> dict:
+    """Directorio de a quién pedirle conectividad, y por qué vía.
+
+    Lo que lo hace útil no es la lista de correos: es el campo `pide`. La UIT
+    despliega terminales en 24-48 h pero **solo a petición de un Estado
+    miembro**, así que escribirle como particular no activa nada — la carta
+    que sirve es la que va al MinTIC. Starlink dona a organizaciones ya
+    verificadas, no a personas. Ese mapa de vías es la diferencia entre una
+    petición que llega a alguien con mandato y veinte correos perdidos.
+
+    Los contactos que no se pudieron verificar van marcados como tales, con su
+    canal oficial. No se inventa ninguna dirección.
+    """
+    return enlaces.directorio()
+
+
+@app.post("/api/enlaces/cartas", tags=["enlaces"])
+def enlaces_cartas(p: PeticionCartas) -> dict:
+    """Redacta todas las cartas, cada una con la evidencia medida AHORA dentro.
+
+    Nada se envía desde aquí. La respuesta trae el asunto y el cuerpo listos
+    para revisar y mandar desde el correo de quien firma — que es lo que hace
+    que alguien la lea, en vez de que la filtre un antispam corporativo.
+    """
+    try:
+        ev = enlaces.reunir_evidencia(p.mmi_min, p.horas)
+    except Exception as e:
+        raise HTTPException(502, f"No se pudo reunir la evidencia: {type(e).__name__}: {e}")
+    cartas = enlaces.redactar_todas(ev, p.remitente.model_dump(),
+                                    p.destinatarios, p.url_mapa.strip())
+    return {"generado": ahora(), "evidencia": ev, "cartas": cartas}
+
+
+@app.post("/api/enlaces/paquete.zip", tags=["enlaces"])
+def enlaces_paquete(p: PeticionCartas) -> Response:
+    """Todas las cartas como archivos .eml en un .zip.
+
+    Se arrastran al cliente de correo y quedan listas para revisar y enviar,
+    en vez de copiar y pegar veinte veces a las tres de la mañana.
+    """
+    try:
+        ev = enlaces.reunir_evidencia(p.mmi_min, p.horas)
+    except Exception as e:
+        raise HTTPException(502, f"No se pudo reunir la evidencia: {type(e).__name__}: {e}")
+    cartas = enlaces.redactar_todas(ev, p.remitente.model_dump(),
+                                    p.destinatarios, p.url_mapa.strip())
+    datos = enlaces.paquete_eml(cartas, p.remitente.model_dump())
+    nombre = f"hope_cartas_{datetime.now(timezone.utc):%Y%m%d_%H%M}.zip"
+    return Response(content=datos, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
 
 
 @app.get("/api/config", tags=["sistema"])
