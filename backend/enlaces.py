@@ -514,6 +514,13 @@ def reunir_evidencia(mmi_min: float = 5.0, horas: int = 3) -> dict:
     sin_luz = top(("sin_luz", "sin_luz_y_sin_red"))
     sin_red = top(("sin_red", "sin_luz_y_sin_red"))
 
+    # Que el epicentro esté entre los puntos ciegos pesa en una carta, pero hay
+    # que mirarlo en la lista COMPLETA: las de arriba van recortadas a 12 y San
+    # José del Palmar es pequeño, así que cae fuera del corte y la carta
+    # dejaría de decir lo más contundente que tiene.
+    epicentro_ciego = any("Palmar" in l["nombre"] for l in lugares
+                          if l["clase"] == "punto_ciego")
+
     r = mapa["resumen"]
     return {
         "consultado": mapa["consultado"],
@@ -525,6 +532,7 @@ def reunir_evidencia(mmi_min: float = 5.0, horas: int = 3) -> dict:
         "sin_red": sin_red,
         "personas_ciegas": r.get("poblacion_en_puntos_ciegos", 0),
         "personas_expuestas": r.get("poblacion_expuesta", 0),
+        "epicentro_ciego": epicentro_ciego,
     }
 
 
@@ -635,8 +643,9 @@ def redactar(dest_id: str, evidencia: dict, remitente: dict,
 
     # Hoy el epicentro está entre los puntos ciegos, y decirlo pesa. Pero es un
     # hecho que puede dejar de ser cierto en cuanto alguien mida allí, y una
-    # carta que afirma algo falso se cae entera. Se comprueba en cada envío.
-    epicentro_ciego = any("Palmar" in l["nombre"] for l in ev["puntos_ciegos"])
+    # carta que afirma algo falso se cae entera. Se comprueba en cada envío,
+    # contra la lista completa y no contra la recortada.
+    epicentro_ciego = bool(ev.get("epicentro_ciego"))
     remate_es = (" Entre ellos está San José del Palmar, que es el epicentro mismo."
                  if epicentro_ciego else "")
     remate_en = (" Among them is San José del Palmar, the epicentre itself."
@@ -815,6 +824,310 @@ def redactar_todas(evidencia: dict, remitente: dict, ids: Optional[list[str]] = 
     elegidos = ids or [d["id"] for d in DESTINATARIOS]
     return [redactar(i, evidencia, remitente, url_mapa)
             for i in elegidos if _por_id(i)]
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  CARTA CONJUNTA — un botón, un envío, todas las entidades
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Las veinte cartas individuales sirven para hacer las cosas bien: cada
+# organización con su idioma y su argumento. Pero exigen sentarse un rato, y
+# eso deja fuera a la mayoría de la gente que querría empujar.
+#
+# Esto es lo contrario: UNA carta, dirigida a todas las entidades a la vez, que
+# cualquiera puede mandar desde su propio correo en un clic. Es el formato de
+# campaña.
+#
+# ── Por qué van todos en el mismo «Para» y no en copia oculta ──────────────
+#
+# Porque que se vean unos a otros es media petición. El MinTIC leyendo que la
+# misma carta le llegó a la UIT, a TSF y a la Cruz Roja entiende que hay un
+# expediente abierto, no una queja suelta. Y TSF, al ver al MinTIC en el hilo,
+# sabe que existe la contraparte estatal que su procedimiento exige. Con copia
+# oculta se pierde exactamente eso, que es lo único que una carta conjunta
+# aporta sobre veinte cartas sueltas.
+#
+# ── Por qué sale del correo de la persona y no del servidor ────────────────
+#
+# Porque es lo que funciona. Quinientos correos desde quinientas direcciones
+# reales de ciudadanos colombianos son presión: cada uno es una persona
+# identificable a la que hay que responder, y a un derecho de petición el
+# Estado colombiano tiene plazo legal para contestar. Quinientos correos desde
+# un servidor desconocido son una sola regla de filtro y, con suerte, una
+# lista negra que después impide llegar a nadie.
+#
+# ── Por qué es bilingüe ────────────────────────────────────────────────────
+#
+# Van juntos el MinTIC y el Emergency Telecommunications Cluster. Mandar dos
+# correos distintos rompe el hilo compartido; mandar uno solo en español deja
+# fuera a la mitad de los que pueden ayudar. Va el cuerpo en español y un
+# resumen en inglés con las mismas cifras.
+
+# Un derecho de petición invoca el artículo 23 de la Constitución y obliga a
+# responder en plazo. Es la diferencia entre una carta y un trámite con reloj.
+ASUNTO_CONJUNTA = (
+    "Derecho de peticion / Urgent request — Sismo M7.4 Choco: "
+    "{n_ciegos} municipios sin medicion, {p_ciegos} personas"
+)
+
+
+def destinatarios_conjunta() -> list[dict]:
+    """Los que tienen correo comprobado. A un canal web no se le puede mandar
+    un correo, y meter una dirección sin verificar en una campaña masiva es
+    multiplicar por mil una carta que no llega a ninguna parte."""
+    return [d for d in DESTINATARIOS
+            if d["canal"] == "correo" and d["estado"] == "verificado"]
+
+
+def carta_conjunta_breve(evidencia: dict, remitente: dict,
+                         url_mapa: str = "") -> str:
+    """Versión corta, la que cabe en un `mailto:`.
+
+    La carta completa son ~11.500 caracteres. Un `mailto:` con eso dentro
+    revienta en Outlook de escritorio, que corta sobre los 2.000: el correo se
+    abriría con el texto truncado a media frase, y la persona lo enviaría sin
+    darse cuenta. Peor que no tener el botón.
+
+    Y para una campaña la corta es además la buena: una carta de once mil
+    caracteres no la lee nadie; esta se lee entera en treinta segundos y lleva
+    las mismas cifras, con el enlace al método completo para quien lo quiera
+    comprobar.
+    """
+    ev = evidencia
+    r = ev["resumen"]
+    n_ciegos = r.get("puntos_ciegos", 0)
+    p_ciegos = ev.get("personas_ciegas", 0)
+    top5 = ev["puntos_ciegos"][:5]
+    nombres = ", ".join(l["nombre"] for l in top5)
+    epi = (" Uno de ellos es San Jose del Palmar: el epicentro."
+           if ev.get("epicentro_ciego") else "")
+    quien = (remitente.get("nombre") or "").strip()
+    ciudad = (remitente.get("ciudad") or "").strip()
+    firma = quien or "(nombre)"
+    if ciudad:
+        firma += f"\n{ciudad}, Colombia"
+    enlace = f"\nDatos, metodo y mapa en vivo: {url_mapa}\n" if url_mapa else ""
+
+    return f"""DERECHO DE PETICION (art. 23 de la Constitucion Politica)
+Sismo M7.4 del 10 de agosto de 2026, Choco - evento USGS {fuentes.USGS_EVENTO}
+
+Respetados senores:
+
+Les escribo a todos ustedes en el mismo correo, a proposito, porque cada uno
+tiene una pieza que los demas no pueden poner.
+
+{n_ciegos} municipios que el USGS confirma sacudidos a intensidad MMI 6 o mas,
+donde viven {_mil(p_ciegos)} personas, NO tienen ninguna medicion de red ni de
+energia. No es que se sepa que estan bien: es que nadie los ha mirado.{epi}
+
+Algunos: {nombres}.
+
+Esto sale de cruzar cuatro fuentes publicas -USGS PAGER/ShakeMap, satelite
+VIIRS de la NASA, sondas RIPE Atlas e IODA de Georgia Tech- poblado por
+poblado. Son datos verificables, no estimaciones.
+
+SOLICITO:
+
+1. Al MinTIC, la UNGRD y la CRC: que se curse la solicitud formal de
+   asistencia a la Union Internacional de Telecomunicaciones. La UIT
+   despliega terminales satelitales en 24-48 horas, pero UNICAMENTE a
+   peticion de un Estado miembro. Ningun ciudadano puede activar ese
+   mecanismo: solo ustedes. Y facilitacion aduanera invocando el Convenio
+   de Tampere, del que Colombia es parte.
+
+2. A las organizaciones de telecomunicaciones de emergencia: despliegue de
+   equipos autonomos hacia esos municipios, o la via mas rapida para lograrlo.
+
+3. A los organismos de socorro: verificacion en terreno y respaldo
+   institucional, que es lo que exigen los donantes de equipos.
+
+Donde cayo el acceso pero el troncal aguanta, lo que falta es ENERGIA: un
+router sin luz no prende y una cuadrilla de fibra no arregla nada. Donde no
+hay ninguna medicion, hace falta un terminal satelital autonomo.
+{enlace}
+Como derecho de peticion, solicito respuesta en los terminos del articulo 14
+de la Ley 1755 de 2015.
+
+Esto no es una linea de emergencia ni sustituye al 123.
+
+{firma}
+"""
+
+
+def carta_conjunta(evidencia: dict, remitente: dict, url_mapa: str = "") -> dict:
+    """Una sola carta para todas las entidades. El formato de campaña."""
+    ev = evidencia
+    r = ev["resumen"]
+    ahora = datetime.now(TZ_CO)
+    deriva = ev.get("deriva_luz", {})
+    dests = destinatarios_conjunta()
+
+    n_ciegos = r.get("puntos_ciegos", 0)
+    p_ciegos = ev.get("personas_ciegas", 0)
+    epicentro_ciego = bool(ev.get("epicentro_ciego"))
+
+    quien = (remitente.get("nombre") or "").strip()
+    ciudad = (remitente.get("ciudad") or "").strip()
+    presentacion = "Escribo como ciudadano"
+    if quien and ciudad:
+        presentacion = f"Escribo como ciudadano desde {ciudad}"
+    elif ciudad:
+        presentacion = f"Escribo desde {ciudad}"
+
+    metodo = METODO_ES.format(evento=fuentes.USGS_EVENTO,
+                              deriva=deriva.get("valor_pct"),
+                              n_control=deriva.get("poblados_de_control", 0))
+    mapa_linea = f"\nMapa en vivo, con los datos y el metodo abiertos: {url_mapa}\n" \
+                 if url_mapa else ""
+
+    cuerpo = f"""DERECHO DE PETICION (art. 23 de la Constitucion Politica de Colombia)
+y solicitud de asistencia internacional en telecomunicaciones de emergencia
+
+{ahora:%d/%m/%Y %H:%M} hora Colombia
+Sismo M7.4 del 10 de agosto de 2026, Choco · evento USGS {fuentes.USGS_EVENTO}
+
+Para, en un mismo envio y a proposito:
+{chr(10).join('  · ' + d['nombre'] for d in dests)}
+
+Van todos en el mismo correo para que cada uno vea a los demas. Esto no es
+una queja suelta: es un expediente abierto, y cada entidad de esta lista tiene
+una pieza que las otras no pueden poner.
+
+Respetados senores:
+
+{presentacion}.
+
+Solicito su intervencion urgente para llevar conectividad a los municipios que
+siguen incomunicados tras el sismo. Lo hago con mediciones publicas y
+verificables, no con estimaciones.
+
+LO QUE ESTA MEDIDO
+
+Se cruzaron cuatro fuentes publicas independientes hasta el nivel de poblado:
+{r.get('lugares', 0)} localidades, {_mil(r.get('poblacion_expuesta', 0))} personas dentro de la zona sacudida.
+
+  {n_ciegos} poblados, donde viven {_mil(p_ciegos)} personas, temblaron a
+  intensidad MMI 6 o mas y NO tienen NINGUNA medicion local. No es que se
+  sepa que estan bien: es que nadie los ha mirado.{
+  ' Entre ellos esta San Jose del Palmar, que es el epicentro mismo.'
+  if epicentro_ciego else ''}
+
+MUNICIPIOS DE LOS QUE NO SE SABE NADA (maxima prioridad):
+{_lista(ev['puntos_ciegos'], 12)}
+
+MUNICIPIOS CON PERDIDA DE ENERGIA MEDIDA POR SATELITE:
+{_lista(ev['sin_luz'], 10)}
+
+QUE SE PIDE, A CADA UNO
+
+  Al MinTIC, a la UNGRD y a la CRC:
+    1. Que se curse la solicitud formal de asistencia a la Union Internacional
+       de Telecomunicaciones (UIT). La UIT despliega telefonos satelitales y
+       terminales BGAN en las primeras 24 a 48 horas, pero UNICAMENTE a
+       peticion de un Estado miembro. En Tonga la solicitud la hizo el
+       ministerio; en Nicaragua, el regulador con la agencia de desastres.
+       Ningun ciudadano ni organizacion privada puede activar ese mecanismo.
+       Solo ustedes. Por eso esta carta llega primero aqui.
+    2. Facilitacion aduanera y de espectro para el ingreso de terminales
+       satelitales donadas, invocando el Convenio de Tampere sobre suministro
+       de recursos de telecomunicaciones para la mitigacion de catastrofes,
+       del que Colombia es parte y que existe exactamente para esto.
+    3. Coordinacion con los operadores para priorizar los municipios listados.
+
+  A las organizaciones de telecomunicaciones de emergencia:
+    4. Orientacion sobre la via mas rapida viable y, si su procedimiento lo
+       permite, despliegue de equipos hacia los puntos ciegos.
+
+  A los organismos de socorro:
+    5. Verificacion en terreno de los municipios listados, y respaldo
+       institucional para las donaciones de equipos que exigen una
+       organizacion acreditada como contraparte.
+
+QUE HACE FALTA EXACTAMENTE, QUE NO ES LO MISMO EN TODAS PARTES
+
+Las mediciones separan dos problemas que de lejos se ven iguales y que se
+resuelven al reves uno del otro:
+
+  - Donde cayo el acceso pero el troncal sigue anunciando rutas, la fibra esta
+    sana y lo que falta es ENERGIA. Un router sin luz no prende. Mandar una
+    cuadrilla de red alli no arregla nada; una planta y combustible, si.
+  - Donde el troncal retiro rutas, si es corte de red: hace falta cuadrilla o
+    enlace satelital.
+  - En los puntos ciegos solo sirve un terminal satelital AUTONOMO, con su
+    propia energia, porque ni siquiera se sabe que quedo en pie.
+
+QUE SE OFRECE A CAMBIO
+
+El mapa completo en vivo, sus datos y su codigo fuente, gratis y sin
+condiciones, para quien coordine la respuesta. Se actualiza cada pocos minutos.
+{mapa_linea}
+{metodo}
+
+Como derecho de peticion, solicito respuesta dentro de los terminos del
+articulo 14 de la Ley 1755 de 2015.
+
+Esto no es una linea de emergencia y no sustituye al 123. Es un aporte de
+datos hecho de buena fe por un ciudadano.
+
+Agradezco su tiempo,
+
+{_firma(remitente, 'es')}
+
+
+═══════════════════════════════════════════════════════════════════════════
+ENGLISH SUMMARY — for the international recipients of this same message
+
+On 10 August 2026 a magnitude 7.4 earthquake struck Choco, Colombia (USGS
+event {fuentes.USGS_EVENTO}, red PAGER alert). This is a citizen request for
+emergency connectivity support, sent to Colombian authorities and to emergency
+telecommunications organisations in the same message, on purpose.
+
+Four independent public sources were fused down to the level of individual
+populated places: {r.get('lugares', 0)} towns, {r.get('poblacion_expuesta', 0):,} people exposed.
+
+  {n_ciegos} populated places, home to {p_ciegos:,} people, shook at MMI 6 or
+  above and have NO local measurement of any kind. Not "they are fine" —
+  nobody has measured them.{
+  ' Among them is San Jose del Palmar, the epicentre itself.'
+  if epicentro_ciego else ''}
+
+BLIND SPOTS — highest priority, no data exists for these:
+{_lista_en(ev['puntos_ciegos'], 12)}
+
+MEASURED LOSS OF POWER (satellite, ~610 m resolution):
+{_lista_en(ev['sin_luz'], 10)}
+
+What is requested: satellite terminals with autonomous power for the blind
+spots; guidance on the fastest viable route given Colombian customs and
+spectrum rules; and, from the Colombian authorities copied here, the formal
+Member State request that ITU assistance requires.
+
+Offered in return: the full live map, its data feeds and its source code, free
+and unconditionally, to whoever coordinates the response.
+
+{METODO_EN.format(evento=fuentes.USGS_EVENTO,
+                  deriva=deriva.get('valor_pct'),
+                  n_control=deriva.get('poblados_de_control', 0))}
+
+This is not an official emergency dispatch. It is a data contribution offered
+in good faith.
+
+{_firma(remitente, 'en')}
+"""
+
+    return {
+        "asunto": ASUNTO_CONJUNTA.format(n_ciegos=n_ciegos, p_ciegos=_mil(p_ciegos)),
+        "cuerpo": cuerpo.strip() + "\n",
+        # La breve es la que viaja en el mailto; la larga, la que se copia o se
+        # baja como .eml. Van las dos para que el navegador elija sin otra
+        # consulta: en una campaña, cada ida y vuelta al servidor es gente que
+        # cierra la pestaña.
+        "cuerpo_breve": carta_conjunta_breve(evidencia, remitente, url_mapa).strip() + "\n",
+        "para": [d["valor"] for d in dests],
+        "copia": [d["copia"] for d in dests if d.get("copia")],
+        "destinatarios": [{"nombre": d["nombre"], "valor": d["valor"]} for d in dests],
+    }
 
 
 def paquete_eml(cartas: list[dict], remitente: dict) -> bytes:

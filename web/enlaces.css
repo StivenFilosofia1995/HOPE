@@ -50,6 +50,85 @@ body.pagina-enlaces {
 
 .intro { border-left: 3px solid var(--acento); }
 
+/* ── Acción principal: un clic, todas las entidades ──────── */
+.campana {
+  border: 1px solid #845ef7;
+  background: linear-gradient(160deg, rgba(112, 72, 232, .16), var(--bg-2) 60%);
+}
+.campana .grande { font-size: 16px; }
+
+.rejilla-express {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px 14px;
+  margin: 14px 0;
+}
+.rejilla-express label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--texto-2); }
+.rejilla-express input {
+  background: var(--bg);
+  border: 1px solid var(--linea);
+  border-radius: 6px;
+  color: var(--texto);
+  padding: 11px 12px;
+  font: inherit;
+  font-size: 15px;
+}
+.rejilla-express input:focus { outline: 2px solid #845ef7; outline-offset: -1px; }
+
+.btn-enviar {
+  width: 100%;
+  background: #7048e8;
+  border: 1px solid #9775fa;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 15px 20px;
+  letter-spacing: .2px;
+}
+.btn-enviar:hover:not(:disabled) { background: #845ef7; }
+.btn-enviar:disabled { opacity: .5; cursor: not-allowed; }
+
+.destinos-express { margin-top: 12px; }
+.destinos-lista { list-style: none; margin: 4px 0 0; padding: 0; }
+.destinos-lista li {
+  font-size: 12.5px; padding: 3px 0;
+  border-bottom: 1px solid var(--linea);
+}
+.destinos-lista li:last-child { border-bottom: 0; }
+.destinos-lista span { color: var(--texto-2); font-size: 11.5px; }
+
+.alternativas { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--linea); }
+
+.por-que-asi { margin-top: 14px; }
+.por-que-asi summary {
+  cursor: pointer; font-size: 12.5px; color: var(--acento);
+  padding: 6px 0; list-style: revert;
+}
+.por-que-asi p {
+  font-size: 12.5px; line-height: 1.6; color: var(--texto-2);
+  margin: 8px 0 0; max-width: 74ch;
+}
+
+/* ── Compartir ───────────────────────────────────────────── */
+.compartir-caja { border-left: 3px solid var(--baja); }
+.compartir-botones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.btn-wa { background: #25a35a; border: 1px solid #2fbf6c; color: #fff; }
+.btn-wa:hover { background: #2fbf6c; }
+
+/* ── Lo avanzado, plegado ────────────────────────────────── */
+.avanzado > summary {
+  cursor: pointer;
+  list-style: revert;
+  padding: 2px 0;
+}
+.avanzado > summary h2 { display: inline; font-size: 15px; }
+.sub-tarjeta {
+  border-top: 1px solid var(--linea);
+  margin-top: 14px;
+  padding-top: 14px;
+}
+.sub-tarjeta h2 { font-size: 14px; margin: 0 0 6px; }
+
 /* ── Evidencia en vivo ───────────────────────────────────── */
 .evidencia { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
 .cifra {

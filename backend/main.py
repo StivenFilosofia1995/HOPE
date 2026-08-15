@@ -726,6 +726,29 @@ def enlaces_cartas(p: PeticionCartas) -> dict:
     return {"generado": ahora(), "evidencia": ev, "cartas": cartas}
 
 
+@app.post("/api/enlaces/conjunta", tags=["enlaces"])
+def enlaces_conjunta(p: PeticionCartas) -> dict:
+    """**Una sola carta para todas las entidades.** El formato de campaña.
+
+    Las veinte cartas individuales sirven para hacer las cosas bien, pero
+    exigen sentarse un rato y eso deja fuera a casi todo el mundo. Esta es una
+    sola, dirigida a todos a la vez, que cualquiera manda en un clic desde su
+    propio correo.
+
+    Va como derecho de petición (art. 23 de la Constitución), que obliga al
+    Estado a responder en plazo, y con todos los destinatarios visibles entre
+    sí a propósito: el MinTIC leyendo que la misma carta le llegó a la UIT y a
+    la Cruz Roja entiende que hay un expediente abierto, no una queja suelta.
+    """
+    try:
+        ev = enlaces.reunir_evidencia(p.mmi_min, p.horas)
+    except Exception as e:
+        raise HTTPException(502, f"No se pudo reunir la evidencia: {type(e).__name__}: {e}")
+    return {"generado": ahora(),
+            "carta": enlaces.carta_conjunta(ev, p.remitente.model_dump(),
+                                            p.url_mapa.strip())}
+
+
 @app.post("/api/enlaces/paquete.zip", tags=["enlaces"])
 def enlaces_paquete(p: PeticionCartas) -> Response:
     """Todas las cartas como archivos .eml en un .zip.

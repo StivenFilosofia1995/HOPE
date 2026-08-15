@@ -385,9 +385,25 @@ y las nubes marcaban 114 pueblos «sin luz» que no lo estaban. Ver FUENTES.md �
 
 | Método | Ruta | |
 |---|---|---|
+| `POST` | `/api/enlaces/conjunta` | **Una sola carta para las 7 entidades a la vez.** El formato de campaña: un clic |
 | `GET` | `/api/enlaces/destinatarios` | Directorio: 20 organizaciones, **y por qué vía se le pide a cada una** |
 | `POST` | `/api/enlaces/cartas` | Redacta las 20 cartas con la evidencia medida ahora dentro |
 | `POST` | `/api/enlaces/paquete.zip` | Todas como archivos `.eml`, listos para arrastrar al correo |
+
+El botón principal de la vista usa `/conjunta`: la persona pone su nombre y su
+ciudad, y se le abre su correo con los 7 destinatarios, el asunto y el texto
+puestos. Va como **derecho de petición** (art. 23 de la Constitución), que
+obliga al Estado a responder en plazo, y con todos los destinatarios
+**visibles entre sí** a propósito: el MinTIC leyendo que la misma carta le
+llegó a la UIT y a la Cruz Roja entiende que hay un expediente abierto, no una
+queja suelta.
+
+La respuesta trae dos cuerpos. El largo (~11.500 caracteres) es para copiar o
+bajar como `.eml`; el **breve (~1.900)** es el que viaja en el `mailto:`,
+porque Outlook de escritorio corta sobre los 2.000 **y lo hace en silencio** —
+el correo se abriría truncado a media frase y se enviaría así. Si aun con el
+breve no cabe, la carta se copia al portapapeles y el correo se abre solo con
+destinatarios y asunto. Nunca se manda cortada.
 
 Lo que hace útil el directorio no es la lista de correos: es saber **quién
 puede pedirle qué a quién**. La UIT despliega terminales satelitales en 24–48 h

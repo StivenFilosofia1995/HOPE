@@ -22,16 +22,59 @@
 
 <main class="envoltura">
 
-  <!-- ═══ Qué es esto, en una frase ═══ -->
-  <section class="tarjeta intro">
-    <p class="grande">Este sistema <strong>escribe solo</strong> una carta distinta
-      para cada organización que podría dar internet a la zona, con las
-      mediciones de este momento dentro: qué pueblos, cuánta gente, y si lo que
-      falta es <strong>energía</strong> o es <strong>red</strong>.</p>
-    <p class="hint">Tú las revisas y las envías desde tu correo. El sistema no
-      manda nada por su cuenta — una carta firmada por una persona real, con su
-      teléfono, la lee alguien; un envío masivo desde un servidor desconocido
-      cae en el filtro de spam y quema el único contacto que hay.</p>
+  <!-- ═══════════════════════════════════════════════════════════════
+       ACCIÓN PRINCIPAL — un clic, una carta, todas las entidades.
+       Va primero y ocupa toda la pantalla a propósito: la mayoría de la
+       gente que entra aquí quiere empujar, no estudiar un directorio.
+       ═══════════════════════════════════════════════════════════════ -->
+  <section class="tarjeta campana">
+    <p class="grande">Una carta ya escrita, con las mediciones de este momento
+      dentro, dirigida <strong>a las 7 entidades a la vez</strong>. Solo pon tu
+      nombre y tu ciudad.</p>
+
+    <form id="form-express" class="rejilla-express">
+      <label>Tu nombre
+        <input name="nombre" type="text" maxlength="120" placeholder="Nombre y apellido" required />
+      </label>
+      <label>Tu ciudad
+        <input name="ciudad" type="text" maxlength="120" placeholder="Medellín" />
+      </label>
+    </form>
+
+    <button id="btn-enviar-todo" class="btn btn-enviar">
+      Enviar la carta a las 7 entidades
+    </button>
+
+    <p class="hint" id="estado-express">Se abre tu correo con todo puesto:
+      destinatarios, asunto y texto. Solo revisas y le das a enviar.</p>
+
+    <div id="lista-destinos-express" class="destinos-express"></div>
+
+    <details class="por-que-asi">
+      <summary>¿Por qué se envía desde mi correo y no desde el servidor?</summary>
+      <p>Porque es lo que <strong>funciona</strong>. Quinientos correos desde
+        quinientas direcciones reales de ciudadanos son presión: cada uno es una
+        persona identificable a la que hay que responder, y a un
+        <strong>derecho de petición</strong> el Estado colombiano tiene plazo
+        legal para contestar. Quinientos correos desde un servidor desconocido
+        son una sola regla de filtro de spam — y, con suerte, una lista negra
+        que después impide llegar a nadie.</p>
+      <p>Por eso la carta va como derecho de petición y con las 7 entidades
+        <strong>visibles entre sí</strong>: el MinTIC leyendo que la misma carta
+        le llegó a la UIT y a la Cruz Roja entiende que hay un expediente
+        abierto, no una queja suelta.</p>
+    </details>
+  </section>
+
+  <!-- ═══ Compartir: sin esto no hay campaña ═══ -->
+  <section class="tarjeta compartir-caja">
+    <h2>Que lo mande más gente</h2>
+    <p class="hint">Una carta se archiva. Doscientas iguales, con doscientos
+      nombres distintos detrás, se responden.</p>
+    <div class="compartir-botones">
+      <button id="btn-wa" class="btn btn-wa">Compartir por WhatsApp</button>
+      <button id="btn-copiar-link" class="btn btn-sec">Copiar el enlace</button>
+    </div>
   </section>
 
   <!-- ═══ La evidencia en vivo ═══ -->
@@ -44,8 +87,15 @@
     <div id="evidencia-fallos"></div>
   </section>
 
-  <!-- ═══ Quién firma ═══ -->
-  <section class="tarjeta">
+  <!-- ═══ A partir de aquí, para quien quiera hacerlo a fondo ═══ -->
+  <details class="tarjeta avanzado">
+    <summary><h2>Escribirle a cada entidad por separado (20 cartas)</h2></summary>
+    <p class="hint">Lo de arriba basta para empujar. Esto es para quien vaya a
+      hacer seguimiento: una carta distinta por organización, en su idioma y con
+      el argumento que le corresponde, incluidas las 13 que no publican correo
+      y hay que contactar por su formulario.</p>
+
+  <section class="sub-tarjeta">
     <h2>Quién firma</h2>
     <p class="hint">Va al pie de cada carta. <strong>Se guarda solo en este
       navegador</strong>: no viaja a ninguna base de datos ni queda registrado en
@@ -66,9 +116,9 @@
   </section>
 
   <!-- ═══ Acciones ═══ -->
-  <section class="tarjeta acciones-barra">
+  <section class="sub-tarjeta acciones-barra">
     <button id="btn-generar" class="btn btn-primario btn-grande">
-      Escribir todas las cartas
+      Escribir las 20 cartas
     </button>
     <button id="btn-zip" class="btn btn-sec" disabled>
       Descargar todas (.eml para el correo)
@@ -78,6 +128,7 @@
 
   <!-- ═══ Las cartas, por grupo ═══ -->
   <div id="grupos"></div>
+  </details>
 
   <section class="tarjeta nota-final">
     <h2>Antes de enviar</h2>

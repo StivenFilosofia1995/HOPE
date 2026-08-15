@@ -41,6 +41,9 @@ async function iniciar() {
       'pueden consultar desde el navegador. Levántalo con ' +
       '<code>uvicorn backend.main:app</code> o abre la versión desplegada.</p>';
     $('#btn-generar').disabled = true;
+    $('#btn-enviar-todo').disabled = true;
+    $('#estado-express').textContent =
+      'Sin backend no se puede medir ni redactar. Abre la versión desplegada.';
     return;
   }
 
@@ -206,6 +209,187 @@ function conectar() {
   $('#form-remitente').addEventListener('input', guardarRemitente);
   $('#btn-generar').onclick = generar;
   $('#btn-zip').onclick = descargarZip;
+
+  // El formulario exprés y el completo comparten los mismos datos: quien
+  // escriba su nombre arriba no tiene que volver a escribirlo abajo.
+  $('#form-express').addEventListener('input', () => {
+    const e = $('#form-express');
+    const f = $('#form-remitente');
+    f.nombre.value = e.nombre.value;
+    f.ciudad.value = e.ciudad.value;
+    guardarRemitente();
+  });
+  $('#form-express').addEventListener('submit', (ev) => ev.preventDefault());
+
+  $('#btn-enviar-todo').onclick = enviarATodos;
+  $('#btn-wa').onclick = compartirWhatsApp;
+  $('#btn-copiar-link').onclick = copiarEnlace;
+}
+
+/* ── El botón de campaña ───────────────────────────────────────────────────
+   Un clic: pide la carta conjunta, abre el correo de la persona con los 7
+   destinatarios, el asunto y el texto puestos, y le deja pulsar enviar.
+
+   Sale de su correo y no del servidor porque es lo que funciona. Quinientos
+   correos desde quinientas direcciones reales son presión —cada uno es una
+   persona identificable y un derecho de petición con plazo legal—; quinientos
+   desde un servidor desconocido son una regla de filtro y una lista negra que
+   después impide llegar a nadie. */
+
+// Outlook de escritorio corta el mailto sobre los 2.000 caracteres, y lo hace
+// en silencio: el correo se abriría con el texto truncado a media frase y la
+// persona lo enviaría sin notarlo. Por debajo de este límite va la carta
+// dentro del enlace; por encima, se copia al portapapeles y el correo se abre
+// solo con destinatarios y asunto.
+const LIMITE_MAILTO = 1900;
+
+async function enviarATodos() {
+  const b = $('#btn-enviar-todo');
+  const e = $('#form-express');
+  if (!e.nombre.value.trim()) {
+    e.nombre.focus();
+    toast('Escribe tu nombre: es lo que convierte la carta en presión real.', true);
+    return;
+  }
+
+  b.disabled = true;
+  b.textContent = 'Preparando tu carta…';
+  const estado = $('#estado-express');
+  estado.textContent = 'Midiendo la zona ahora mismo y redactando…';
+
+  try {
+    const r = await fetch(`${S.base}/enlaces/conjunta`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpoPeticion()),
+    });
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    const c = (await r.json()).carta;
+    S.conjunta = c;
+
+    pintarDestinos(c);
+
+    const para = c.para.join(',');
+    const cc = c.copia.length ? `&cc=${encodeURIComponent(c.copia.join(','))}` : '';
+    const asunto = encodeURIComponent(c.asunto);
+    const cuerpo = encodeURIComponent(c.cuerpo_breve);
+    const url = `mailto:${encodeURIComponent(para)}?subject=${asunto}${cc}&body=${cuerpo}`;
+
+    if (url.length <= LIMITE_MAILTO * 4) {
+      location.href = url;
+      estado.innerHTML = 'Se abrió tu correo con todo puesto. <strong>Revísalo y ' +
+        'dale a enviar.</strong> Si no se abrió, tu navegador no tiene un ' +
+        'programa de correo asociado: usa el botón de abajo.';
+    } else {
+      // No cabe: se copia y se abre el correo vacío. Nunca se manda truncado.
+      await navigator.clipboard.writeText(c.cuerpo_breve).catch(() => {});
+      location.href = `mailto:${encodeURIComponent(para)}?subject=${asunto}${cc}`;
+      estado.innerHTML = '<strong>La carta quedó copiada.</strong> Se abrió tu ' +
+        'correo con los destinatarios y el asunto: pégala con Ctrl+V y envía.';
+    }
+    mostrarAlternativas(c);
+  } catch (err) {
+    estado.textContent = '';
+    toast('No se pudo preparar la carta: ' + err.message, true);
+  } finally {
+    b.disabled = false;
+    b.textContent = 'Enviar la carta a las 7 entidades';
+  }
+}
+
+function pintarDestinos(c) {
+  $('#lista-destinos-express').innerHTML =
+    '<p class="hint">Va dirigida a:</p><ul class="destinos-lista">' +
+    c.destinatarios.map((d) =>
+      `<li>${escapar(d.nombre)} <span>${escapar(d.valor)}</span></li>`).join('') +
+    '</ul>';
+}
+
+/** Si el navegador no tiene programa de correo asociado —muy común en celular
+ *  y en equipos con Gmail web— el mailto no hace nada visible. Sin una salida
+ *  alterna, la persona se queda mirando la pantalla y se va. */
+function mostrarAlternativas(c) {
+  if ($('#alternativas')) return;
+  const cont = document.createElement('div');
+  cont.id = 'alternativas';
+  cont.className = 'alternativas';
+  cont.innerHTML = '<p class="hint">¿No se abrió tu correo?</p>';
+
+  const bCopiar = document.createElement('button');
+  bCopiar.className = 'btn btn-sec';
+  bCopiar.textContent = 'Copiar carta y destinatarios';
+  bCopiar.onclick = async () => {
+    const txt = `Para: ${c.para.join(', ')}\n` +
+                (c.copia.length ? `Copia: ${c.copia.join(', ')}\n` : '') +
+                `Asunto: ${c.asunto}\n\n${c.cuerpo_breve}`;
+    try {
+      await navigator.clipboard.writeText(txt);
+      bCopiar.textContent = 'Copiado ✓';
+      setTimeout(() => { bCopiar.textContent = 'Copiar carta y destinatarios'; }, 2000);
+    } catch (_) {
+      toast('Tu navegador no dejó copiar. Abre las 20 cartas de abajo.', true);
+    }
+  };
+
+  const aGmail = document.createElement('a');
+  aGmail.className = 'btn btn-sec';
+  aGmail.target = '_blank';
+  aGmail.rel = 'noopener';
+  aGmail.textContent = 'Abrir en Gmail';
+  aGmail.href = 'https://mail.google.com/mail/?view=cm&fs=1' +
+    `&to=${encodeURIComponent(c.para.join(','))}` +
+    (c.copia.length ? `&cc=${encodeURIComponent(c.copia.join(','))}` : '') +
+    `&su=${encodeURIComponent(c.asunto)}` +
+    `&body=${encodeURIComponent(c.cuerpo_breve)}`;
+
+  const bLarga = document.createElement('button');
+  bLarga.className = 'btn btn-sec';
+  bLarga.textContent = 'Ver la versión larga';
+  bLarga.onclick = () => {
+    const ta = document.createElement('textarea');
+    ta.className = 'carta-texto';
+    ta.value = c.cuerpo;
+    ta.spellcheck = false;
+    cont.appendChild(ta);
+    bLarga.remove();
+  };
+
+  const fila = document.createElement('div');
+  fila.className = 'compartir-botones';
+  fila.append(bCopiar, aGmail, bLarga);
+  cont.appendChild(fila);
+  $('#lista-destinos-express').after(cont);
+}
+
+// ── Compartir: sin esto no hay campaña ──────────────────────────────────────
+
+function textoCampana() {
+  const r = (S.evidencia || {}).resumen || {};
+  const n = r.puntos_ciegos;
+  const p = r.poblacion_en_puntos_ciegos;
+  return (n
+    ? `${n} municipios sacudidos por el sismo del Chocó siguen sin una sola ` +
+      `medición de red ni de energía. Viven allí ${nf.format(p)} personas y ` +
+      'nadie los ha mirado.'
+    : 'Hay municipios del sismo del Chocó de los que nadie sabe nada.') +
+    '\n\nAquí la carta ya está escrita: pones tu nombre y la mandas a las 7 ' +
+    'entidades que pueden llevar internet. Toma 30 segundos.\n\n' + location.href;
+}
+
+function compartirWhatsApp() {
+  window.open('https://wa.me/?text=' + encodeURIComponent(textoCampana()),
+              '_blank', 'noopener');
+}
+
+async function copiarEnlace() {
+  const b = $('#btn-copiar-link');
+  try {
+    await navigator.clipboard.writeText(textoCampana());
+    b.textContent = 'Copiado ✓';
+    setTimeout(() => { b.textContent = 'Copiar el enlace'; }, 2000);
+  } catch (_) {
+    toast('Copia la dirección de la barra del navegador.', true);
+  }
 }
 
 function cuerpoPeticion() {
@@ -379,6 +563,13 @@ function cargarRemitente() {
   try { d = JSON.parse(localStorage.getItem(CLAVE_REMITENTE) || '{}'); } catch (_) {}
   const f = $('#form-remitente');
   Object.entries(d).forEach(([k, v]) => { if (f[k]) f[k].value = v; });
+  // El formulario exprés se rellena solo con lo que ya se escribió antes: si
+  // alguien vuelve a la página no debería teclear su nombre otra vez.
+  const e = $('#form-express');
+  if (e) {
+    if (d.nombre) e.nombre.value = d.nombre;
+    if (d.ciudad) e.ciudad.value = d.ciudad;
+  }
   avisoFirma();
 }
 
