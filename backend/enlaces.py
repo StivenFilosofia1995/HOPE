@@ -97,6 +97,18 @@ GRUPOS: dict[str, dict[str, str]] = {
 
 HOY = "2026-08-15"
 
+# ── El teléfono puente ──────────────────────────────────────────────────────
+#
+# Toda carta que pide algo necesita una forma fácil de decir que sí. Un correo
+# se responde en tres días o no se responde; una llamada se contesta en un
+# minuto. Este número va en todas las cartas como canal de coordinación, para
+# que quien quiera ayudar no tenga que buscar a quién escribirle.
+#
+# Va aparte de la firma de quien manda la carta. En una campaña la mayoría de
+# la gente no pondrá su teléfono, y una petición sin forma de responderla se
+# archiva sola: este número garantiza que siempre haya alguien al otro lado.
+TELEFONO_PUENTE = "+57 304 253 5003"
+
 # ── Directorio ──────────────────────────────────────────────────────────────
 #
 # `estado`: "verificado" = la dirección se comprobó contra la página oficial en
@@ -720,159 +732,233 @@ def redactar(dest_id: str, evidencia: dict, remitente: dict,
     # El bloque de petición cambia según a quién se le escriba. Al Estado no se
     # le piden terminales: se le pide que active lo que solo él puede activar.
     if d["grupo"] == "estado":
-        solicitud = """QUÉ SE SOLICITA — y por qué a ustedes en particular
+        solicitud = f"""LO QUE LES PEDIMOS, CON TODO RESPETO
 
-La Unión Internacional de Telecomunicaciones (UIT) despliega teléfonos
-satelitales y terminales BGAN en las primeras 24 a 48 horas de un desastre,
-pero ÚNICAMENTE a petición de un Estado miembro. En Tonga la solicitud la hizo
-el ministerio del ramo; en Nicaragua, el regulador junto con la agencia
-nacional de desastres. Ninguna persona ni organización privada puede activar
-ese mecanismo: solo ustedes.
+Hay una puerta que solo ustedes pueden abrir. La Unión Internacional de
+Telecomunicaciones despliega terminales satelitales en las primeras 24 a 48
+horas de un desastre, pero únicamente cuando lo pide un Estado miembro. En
+Tonga lo pidió el ministerio; en Nicaragua, el regulador con la agencia de
+desastres. Ningún ciudadano puede tocar ese timbre. Ustedes sí.
 
-Colombia además es parte del Convenio de Tampere sobre el suministro de
-recursos de telecomunicaciones para la mitigación de catástrofes, que existe
-precisamente para reducir las barreras aduaneras y regulatorias a la entrada
-de equipos de emergencia.
+Y Colombia es parte del Convenio de Tampere, que existe precisamente para que
+un terminal satelital donado no se quede semanas en una aduana mientras un
+pueblo sigue incomunicado.
 
-Por eso se solicita, en orden de urgencia:
+Por eso les pedimos, en este orden:
 
-  1. Que se curse la solicitud formal de asistencia a la UIT, con los municipios
-     de este documento como base técnica.
-  2. Facilitación aduanera y de espectro para el ingreso de terminales
-     satelitales donadas, invocando el Convenio de Tampere.
-  3. Coordinación con los operadores para priorizar los municipios listados.
-  4. Un canal de recepción para estos datos. Hoy este mapa no está conectado a
-     ningún despacho oficial, y esa es su mayor limitación: una capa de datos
-     sin destinatario no le llega a nadie. Se ofrece completo y sin costo."""
+  1. Que se curse la solicitud formal de asistencia a la UIT. Los municipios
+     de esta carta pueden servirles de base técnica; están medidos y con
+     fuente.
+  2. Facilitación aduanera y de espectro para que entren terminales
+     Starlink u otros equipos satelitales donados, invocando el Convenio de
+     Tampere.
+  3. Que se le pida a los operadores priorizar estos municipios.
+  4. Un canal para recibir estos datos. Hoy el mapa no está conectado a ningún
+     despacho oficial, y esa es su mayor limitación. Se los ofrecemos completo
+     y sin costo, hoy mismo.
+
+Para cualquiera de estos cuatro puntos estamos disponibles al
+{TELEFONO_PUENTE} (llamada o WhatsApp), a la hora que sea."""
     else:
-        solicitud = """QUÉ SE SOLICITA
-  1. Terminales satelitales con energía autónoma para los puntos ciegos.
-  2. Orientación sobre la vía más rápida viable, considerando aduanas y
-     permisos de espectro en Colombia.
-  3. Si su procedimiento exige una solicitud de autoridad nacional, indicarnos
-     cuál documento requieren: estamos escribiendo en paralelo al MinTIC y a
-     la UNGRD."""
+        solicitud = f"""LO QUE LES PEDIMOS
+
+Un enlace satelital por municipio. **Starlink** es lo que mejor funciona en
+estos casos —llega en una caja, lo instala una persona sin formación técnica y
+funciona con un panel solar o una planta pequeña— pero cualquier terminal con
+energía propia sirve igual. También sirve una red de datos móvil desplegable,
+si es lo que tienen a mano.
+
+Con un solo enlace, un municipio entero recupera la capacidad de pedir ayuda:
+de decir cuántos son, qué necesitan y quién falta. Hoy no pueden ni eso.
+
+Si su procedimiento exige una solicitud de autoridad nacional, díganos cuál
+documento necesitan y lo conseguimos: estamos escribiendo en paralelo al
+MinTIC y a la UNGRD.
+
+CÓMO DECIRNOS QUE SÍ, SIN COMPLICACIONES
+
+Basta una llamada o un WhatsApp al {TELEFONO_PUENTE}. A partir de ahí, como
+ustedes prefieran:
+
+  · Hacemos de puente: recibimos los equipos y coordinamos la entrega con la
+    Cruz Roja Colombiana o la Defensa Civil, y les mandamos foto y ubicación
+    de cada terminal instalado.
+  · O lo hacen ustedes directamente: les pasamos el mapa, los datos y los
+    contactos de las alcaldías, y se encargan sin intermediarios.
+
+La segunda opción nos parece igual de buena que la primera. Lo que hace falta
+es que el internet llegue, no que aparezcamos nosotros."""
 
     if d["idioma"] == "en":
-        asunto = (f"Colombia M7.4 earthquake — request for emergency "
-                  f"connectivity: {n_ciegos} unmeasured towns, "
-                  f"{p_ciegos:,} people")
+        asunto = (f"Could you help bring internet to {n_ciegos} cut-off "
+                  f"municipalities in Colombia?")
         cuerpo = f"""To: {d['nombre']}
-
-Subject: Emergency connectivity request — M7.4 earthquake, Chocó, Colombia
 Date: {ahora:%d %B %Y, %H:%M} Colombia time (UTC-5)
 
 Dear colleagues,
 
-On 10 August 2026 a magnitude 7.4 earthquake struck Chocó, Colombia (USGS
-event {fuentes.USGS_EVENTO}, red PAGER alert). I am writing to request
-emergency connectivity support, with measured evidence attached below rather
-than an estimate.
+I am writing to ask for your help, and I will get straight to the point
+because I know your time is scarce.
 
-WHAT WE MEASURED
-We fused four independent public sources down to the level of individual
-the official municipality list: {r.get('lugares', 0)} municipalities,
-{r.get('poblacion_expuesta', 0):,} people exposed. The finding that matters:
+On 10 August a magnitude 7.4 earthquake struck Chocó, Colombia. Today, five
+days on, there are {n_ciegos} municipalities — home to {p_ciegos:,} people —
+that nobody has been able to check for power or signal.{remate_en} We are not
+claiming they are in a bad way: we are saying **nobody has been able to look**,
+and in an emergency that is usually worse.
 
-  {n_ciegos} municipalities, home to {p_ciegos:,} people, shook at MMI 6 or
-  above and have NO local measurement of any kind. Not "they are fine" —
-  nobody has measured them.{remate_en}{respaldo_en}
+Many are towns you reach by boat, or on tracks that the landslides closed.
+They are not offline for lack of coverage: they are offline because the little
+they had came down, and they are last in line for anyone to go and fix it.
 
-BLIND SPOTS — highest priority, no data exists for these:
-{_lista_en(ev['puntos_ciegos'])}{confirmados_en}
-
-MEASURED LOSS OF POWER (satellite, ~610 m resolution):
-{_lista_en(ev['sin_luz'])}
-
-WHAT IS ACTUALLY NEEDED
-The measurements separate two problems that look identical from a distance
-and need opposite responses:
-
-  - Where last-mile access dropped but the backbone still routes, the fibre is
-    intact and what failed is POWER. A router without electricity does not
-    come on. Sending a network crew there fixes nothing; generators and fuel do.
-  - Where the backbone withdrew its routes, it is a genuine network cut and
-    needs a crew or a satellite link.
-  - In the blind spots, an AUTONOMOUS satellite terminal with its own power is
-    the only thing that works, because we do not even know what is left standing.
+**What they need is a satellite link. A Starlink, if at all possible.**
 
 WHAT WE ARE ASKING FOR
-  1. Deployable satellite terminals with autonomous power for the blind spots.
-  2. Technical guidance on the fastest viable route given Colombian customs and
-     spectrum rules.
-  3. If your mandate requires a request from a national authority, please tell
-     us which document you need — we are writing to MinTIC and UNGRD in parallel.
 
-WHAT WE OFFER IN RETURN
+One satellite terminal per municipality. Starlink works best in these
+situations — it arrives in a box, someone with no technical training can set
+it up, and it runs off a solar panel or a small generator. But any terminal
+with its own power source does the job just as well. A deployable mobile data
+network would also work, if that is what you have at hand.
+
+With a single link, an entire municipality gets back the ability to ask for
+help: to say how many they are, what they need, and who is missing. Right now
+they cannot even do that.
+
+If your procedures require a request from a national authority, tell us which
+document you need and we will get it — we are writing to Colombia's MinTIC and
+UNGRD in parallel.
+
+HOW TO SAY YES, WITH NO RED TAPE
+
+One call or WhatsApp message to {TELEFONO_PUENTE} is enough. From there,
+whichever you prefer:
+
+  · We act as the bridge: we receive the equipment and coordinate delivery
+    with the Colombian Red Cross or Civil Defence, and send you a photo and
+    the coordinates of every terminal installed.
+  · Or you do it directly: we hand over the map, the data and the mayors'
+    offices contacts, and you get on with it without intermediaries.
+
+The second option is as good as the first, as far as we are concerned. What
+matters is that the internet arrives, not that we are in the picture.
+
+WHY WE ARE ASKING FOR THIS AND NOT SOMETHING ELSE
+
+So as not to waste your time, we checked what is actually missing in each
+place. It is not the same everywhere, and sending the wrong thing just wastes
+the trip:
+
+  - Where the operator's backbone still routes but homes do not respond, the
+    fibre is fine and what failed is POWER. A router without electricity does
+    not come on. Generators and fuel help there; a network crew does not.
+  - Where the backbone withdrew its routes, it is a genuine network cut and
+    needs a crew or a satellite link.
+  - In the municipalities we know nothing about, the only sure bet is a
+    satellite terminal with its own power — we do not even know what is left
+    standing.
+
+MUNICIPALITIES NOBODY HAS ANY DATA ON — the priority
+{_lista_en(ev['puntos_ciegos'])}{confirmados_en}
+
+MUNICIPALITIES WITH SATELLITE-MEASURED LOSS OF LIGHT
+{_lista_en(ev['sin_luz'])}
+
+WHERE THESE FIGURES COME FROM
+Four independent public sources fused over Colombia's official municipality
+list: {r.get('lugares', 0)} municipalities, {r.get('poblacion_expuesta', 0):,} people inside the shaken area.
+All of it verifiable and open.{respaldo_en}
+
+WHAT WE CAN OFFER
 The full live map, its data feeds and its source code, free and without
-conditions, to whoever coordinates the response. Everything above updates
-every few minutes.
+conditions, to you or to whoever coordinates the response.
 {mapa_linea}
 {METODO_EN.format(**metodo_fmt)}
 
 This is not an official emergency dispatch and does not replace Colombia's
-emergency line (123). It is a data contribution offered in good faith.
+emergency line (123). It is a data contribution offered in good faith by
+people who want to help.
 
-Thank you for your time.
+Thank you for reading this far. Anything at all helps — and if the answer is
+no, we would be just as grateful if you could tell us who else we might write
+to.
+
+With appreciation and gratitude,
 
 {_firma(remitente, 'en')}
+
+Coordination phone (call or WhatsApp, any hour):
+{TELEFONO_PUENTE}
 """
     else:
-        asunto = (f"Sismo M7.4 Chocó — solicitud de conectividad de emergencia: "
-                  f"{n_ciegos} municipios sin medición, {_mil(p_ciegos)} personas")
+        asunto = (f"¿Nos ayudan a llevar internet a {n_ciegos} municipios de "
+                  f"Colombia que siguen incomunicados?")
         cuerpo = f"""Para: {d['nombre']}
-
-Asunto: Solicitud de conectividad de emergencia — sismo M7.4, Chocó
 Fecha: {ahora:%d/%m/%Y %H:%M} hora Colombia
 
-Respetados señores:
+Buenos días:
 
-El 10 de agosto de 2026 un sismo de magnitud 7.4 golpeó el Chocó (evento USGS
-{fuentes.USGS_EVENTO}, alerta PAGER roja). Escribo para solicitar apoyo en
-conectividad de emergencia, y lo hago con mediciones, no con estimaciones.
+Les escribo para pedirles ayuda, y voy a ir directo al grano porque sé que
+tienen poco tiempo.
 
-QUÉ SE MIDIÓ
-Se cruzaron cuatro fuentes públicas independientes sobre el listado oficial de
-municipios: {r.get('lugares', 0)} municipios, {_mil(r.get('poblacion_expuesta', 0))} personas expuestas.
-El hallazgo que importa:
+El 10 de agosto un sismo de magnitud 7.4 golpeó el Chocó. Hoy, {ahora:%d de %B},
+hay {n_ciegos} municipios donde viven {_mil(p_ciegos)} personas de los que
+nadie ha podido saber si tienen luz o señal.{remate_es} No es que estemos
+seguros de que están mal: es que **nadie ha podido mirar**, y eso en una
+emergencia suele ser peor.
 
-  {n_ciegos} municipios, donde viven {_mil(p_ciegos)} personas, temblaron a
-  intensidad MMI 6 o más y NO tienen ninguna medición local. No es que estén
-  bien: es que nadie los ha mirado.{remate_es}{respaldo_es}
+Muchos son pueblos a los que se llega en lancha o por trochas que los
+derrumbes cerraron. No están sin internet por falta de cobertura: están sin
+internet porque se cayó lo poco que tenían, y son los últimos de la fila para
+que alguien vaya a arreglarlo.
 
-PUNTOS CIEGOS — máxima prioridad, no existe dato de estos lugares:
-{_lista(ev['puntos_ciegos'])}{confirmados_es}
-
-PÉRDIDA DE ENERGÍA MEDIDA POR SATÉLITE (resolución ~610 m):
-{_lista(ev['sin_luz'])}
-
-QUÉ HACE FALTA EXACTAMENTE
-Las mediciones separan dos problemas que de lejos se ven iguales y que se
-resuelven al revés uno del otro:
-
-  - Donde cayó el acceso pero el troncal sigue anunciando rutas, la fibra está
-    sana y lo que falta es ENERGÍA. Un router sin luz no prende. Mandar una
-    cuadrilla de red allí no arregla nada; una planta y combustible, sí.
-  - Donde el troncal retiró rutas, sí es corte de red y hace falta cuadrilla o
-    enlace satelital.
-  - En los puntos ciegos solo sirve un terminal satelital AUTÓNOMO, con su
-    propia energía, porque ni siquiera sabemos qué quedó en pie.
+**Lo que necesitan es un enlace satelital. Un Starlink, si es posible.**
 
 {solicitud}
 
-QUÉ SE OFRECE A CAMBIO
-El mapa completo en vivo, sus datos y su código, gratis y sin condiciones,
-para quien coordine la respuesta. Todo lo anterior se actualiza cada pocos
-minutos.
+POR QUÉ LES DECIMOS ESTO Y NO OTRA COSA
+
+Para no hacerles perder el tiempo, revisamos qué falta exactamente en cada
+sitio. No es lo mismo en todos, y mandar lo que no es solo gasta el viaje:
+
+  - Donde la red del operador sigue en pie pero las casas no responden, la
+    fibra está sana y lo que falta es ENERGÍA. Un router sin luz no prende.
+    Allí sirve una planta y combustible, no una cuadrilla de red.
+  - Donde el operador retiró sus rutas, sí es corte de red: hace falta
+    cuadrilla o enlace satelital.
+  - En los municipios de los que no sabemos nada, lo único que funciona seguro
+    es un terminal satelital con su propia energía, porque ni siquiera sabemos
+    qué quedó en pie.
+
+MUNICIPIOS DE LOS QUE NADIE SABE NADA — la prioridad
+{_lista(ev['puntos_ciegos'])}{confirmados_es}
+
+MUNICIPIOS CON PÉRDIDA DE LUZ MEDIDA POR SATÉLITE
+{_lista(ev['sin_luz'])}
+
+DE DÓNDE SALEN ESTAS CIFRAS
+Se cruzaron cuatro fuentes públicas independientes sobre el listado oficial de
+municipios de Colombia: {r.get('lugares', 0)} municipios, {_mil(r.get('poblacion_expuesta', 0))} personas dentro de
+la zona sacudida. Todo es verificable y está abierto.{respaldo_es}
+
+LO QUE PODEMOS APORTAR NOSOTROS
+El mapa completo en vivo, sus datos y su código fuente, gratis y sin
+condiciones, para ustedes o para quien coordine la respuesta.
 {mapa_linea}
 {METODO_ES.format(**metodo_fmt)}
 
 Esto no es un despacho oficial de emergencia ni sustituye la línea 123. Es un
-aporte de datos hecho de buena fe.
+aporte de datos hecho de buena fe por gente que quiere ayudar.
 
-Agradezco su tiempo y quedo atento.
+Gracias por leer hasta aquí. Cualquier cosa, por pequeña que sea, ayuda — y si
+la respuesta es no, agradeceríamos igual que nos digan a quién más podríamos
+escribirle.
+
+Con aprecio y gratitud,
 
 {_firma(remitente, 'es')}
+
+Teléfono de coordinación (llamada o WhatsApp, a cualquier hora):
+{TELEFONO_PUENTE}
 """
 
     return {
@@ -933,8 +1019,8 @@ def redactar_todas(evidencia: dict, remitente: dict, ids: Optional[list[str]] = 
 # Un derecho de petición invoca el artículo 23 de la Constitución y obliga a
 # responder en plazo. Es la diferencia entre una carta y un trámite con reloj.
 ASUNTO_CONJUNTA = (
-    "Derecho de peticion / Urgent request — Sismo M7.4 Choco: "
-    "{n_ciegos} municipios sin medicion, {p_ciegos} personas"
+    "Por favor, ayudenos a llevar internet a {n_ciegos} municipios de Colombia "
+    "que siguen incomunicados ({p_ciegos} personas)"
 )
 
 
@@ -986,49 +1072,74 @@ def carta_conjunta_breve(evidencia: dict, remitente: dict,
         "las personas dentro\ndel area sacudida a intensidad VII o mas."
     ) if exp else "")
 
-    return f"""DERECHO DE PETICION (art. 23 de la Constitucion Politica)
-Sismo M7.4 del 10 de agosto de 2026, Choco - evento USGS {fuentes.USGS_EVENTO}
+    return f"""Buenos dias:
 
-Respetados senores:
+Les escribo para pedirles ayuda con algo concreto: llevar internet a los
+municipios que siguen incomunicados despues del sismo del 10 de agosto en el
+Choco y los departamentos vecinos.
 
-Les escribo a todos ustedes en el mismo correo, a proposito, porque cada uno
-tiene una pieza que los demas no pueden poner.
+Van todos ustedes en el mismo correo a proposito, porque cada uno tiene una
+pieza que los demas no pueden poner.
 
-{n_ciegos} municipios que el USGS confirma sacudidos a intensidad MMI 6 o mas,
-donde viven {_mil(p_ciegos)} personas, NO tienen ninguna medicion de red ni de
-energia. No es que se sepa que estan bien: es que nadie los ha mirado.{epi}
+{n_ciegos} municipios, donde viven {_mil(p_ciegos)} personas, temblaron fuerte
+y NADIE ha podido saber si tienen luz o senal. No decimos que esten mal:
+decimos que nadie ha podido mirar, y en una emergencia eso suele ser peor.{epi}
 
 Algunos: {nombres}.
 
+Muchos son pueblos a los que se llega en lancha o por trochas que los
+derrumbes cerraron. No estan sin internet por falta de cobertura: se cayo lo
+poco que tenian, y son los ultimos de la fila para que alguien vaya a
+arreglarlo.
+
+LO QUE PEDIMOS
+
+Un enlace satelital por municipio. Un STARLINK es lo ideal: llega en una caja,
+lo instala cualquiera y funciona con un panel solar. Pero sirve cualquier
+terminal con energia propia, o una red de datos movil desplegable.
+
+Con un solo enlace, un pueblo entero recupera la capacidad de pedir ayuda: de
+decir cuantos son, que necesitan y quien falta. Hoy no pueden ni eso.
+
+  · Al MinTIC, la UNGRD y la CRC: hay una puerta que solo ustedes pueden
+    abrir. La UIT despliega terminales satelitales en 24-48 horas, pero solo
+    cuando lo pide un Estado miembro; ningun ciudadano puede tocar ese timbre.
+    Y facilitacion aduanera invocando el Convenio de Tampere, del que Colombia
+    es parte, para que un equipo donado no se quede semanas en una aduana.
+
+  · A las organizaciones de telecomunicaciones de emergencia y a los
+    operadores satelitales: equipos, o la via mas rapida para conseguirlos.
+
+  · A los organismos de socorro: verificacion en terreno y respaldo
+    institucional, que es justo lo que exigen quienes donan los equipos.
+
+COMO DECIR QUE SI, SIN COMPLICACIONES
+
+Una llamada o un WhatsApp al {TELEFONO_PUENTE} basta. Y despues, como
+prefieran: hacemos de puente y coordinamos la entrega con la Cruz Roja o la
+Defensa Civil, o les pasamos el mapa y los contactos de las alcaldias y se
+encargan ustedes sin intermediarios. Lo que hace falta es que el internet
+llegue, no que aparezcamos nosotros.
+
 Esto sale de cruzar cuatro fuentes publicas -USGS PAGER/ShakeMap, satelite
 VIIRS de la NASA, sondas RIPE Atlas e IODA de Georgia Tech- sobre el listado
-oficial de municipios. Son datos verificables, no estimaciones.{respaldo}
-
-SOLICITO:
-
-1. Al MinTIC, la UNGRD y la CRC: que se curse la solicitud formal de
-   asistencia a la Union Internacional de Telecomunicaciones. La UIT
-   despliega terminales satelitales en 24-48 horas, pero UNICAMENTE a
-   peticion de un Estado miembro. Ningun ciudadano puede activar ese
-   mecanismo: solo ustedes. Y facilitacion aduanera invocando el Convenio
-   de Tampere, del que Colombia es parte.
-
-2. A las organizaciones de telecomunicaciones de emergencia: despliegue de
-   equipos autonomos hacia esos municipios, o la via mas rapida para lograrlo.
-
-3. A los organismos de socorro: verificacion en terreno y respaldo
-   institucional, que es lo que exigen los donantes de equipos.
-
-Donde cayo el acceso pero el troncal aguanta, lo que falta es ENERGIA: un
-router sin luz no prende y una cuadrilla de fibra no arregla nada. Donde no
-hay ninguna medicion, hace falta un terminal satelital autonomo.
+oficial de municipios. Es verificable y esta abierto.{respaldo}
 {enlace}
-Como derecho de peticion, solicito respuesta en los terminos del articulo 14
-de la Ley 1755 de 2015.
+A las entidades del Estado: esta comunicacion se radica tambien como derecho
+de peticion (art. 23 de la Constitucion), con solicitud de respuesta en los
+terminos del articulo 14 de la Ley 1755 de 2015.
+
+Gracias por leer hasta aqui. Cualquier cosa ayuda, y si la respuesta es no,
+agradeceriamos igual que nos digan a quien mas podriamos escribirle.
 
 Esto no es una linea de emergencia ni sustituye al 123.
 
+Con aprecio,
+
 {firma}
+
+Telefono de coordinacion (llamada o WhatsApp, a cualquier hora):
+{TELEFONO_PUENTE}
 """
 
 
@@ -1086,13 +1197,18 @@ Van todos en el mismo correo para que cada uno vea a los demas. Esto no es
 una queja suelta: es un expediente abierto, y cada entidad de esta lista tiene
 una pieza que las otras no pueden poner.
 
-Respetados senores:
+Buenos dias:
 
-{presentacion}.
+{presentacion}, y les escribo para pedirles ayuda con algo muy concreto:
+llevar internet a los municipios del Choco que siguen incomunicados despues
+del sismo del 10 de agosto.
 
-Solicito su intervencion urgente para llevar conectividad a los municipios que
-siguen incomunicados tras el sismo. Lo hago con mediciones publicas y
-verificables, no con estimaciones.
+Muchos son pueblos a los que se llega en lancha o por trochas que los
+derrumbes cerraron. No estan sin internet por falta de cobertura: se cayo lo
+poco que tenian, y son los ultimos de la fila para que alguien vaya a
+arreglarlo.
+
+Lo que necesitan es un enlace satelital. Un STARLINK, si es posible.
 
 LO QUE ESTA MEDIDO
 
@@ -1111,7 +1227,7 @@ MUNICIPIOS DE LOS QUE NO SE SABE NADA (maxima prioridad):
 MUNICIPIOS CON PERDIDA DE ENERGIA MEDIDA POR SATELITE:
 {_lista(ev['sin_luz'], 10)}
 
-QUE SE PIDE, A CADA UNO
+LO QUE LE PEDIMOS A CADA UNO
 
   Al MinTIC, a la UNGRD y a la CRC:
     1. Que se curse la solicitud formal de asistencia a la Union Internacional
@@ -1127,14 +1243,35 @@ QUE SE PIDE, A CADA UNO
        del que Colombia es parte y que existe exactamente para esto.
     3. Coordinacion con los operadores para priorizar los municipios listados.
 
-  A las organizaciones de telecomunicaciones de emergencia:
-    4. Orientacion sobre la via mas rapida viable y, si su procedimiento lo
-       permite, despliegue de equipos hacia los puntos ciegos.
+  A las organizaciones de telecomunicaciones de emergencia y a los
+  operadores satelitales:
+    4. Un terminal STARLINK por municipio, o cualquier enlace satelital con
+       energia propia. Starlink es lo que mejor funciona aqui: llega en una
+       caja, lo instala una persona sin formacion tecnica y anda con un panel
+       solar. Tambien sirve una red de datos movil desplegable.
+       Con un solo enlace, un pueblo entero recupera la capacidad de pedir
+       ayuda: de decir cuantos son, que necesitan y quien falta.
+    5. Si no pueden dar equipos, orientacion sobre la via mas rapida viable
+       tambien nos sirve muchisimo.
 
   A los organismos de socorro:
-    5. Verificacion en terreno de los municipios listados, y respaldo
-       institucional para las donaciones de equipos que exigen una
-       organizacion acreditada como contraparte.
+    6. Verificacion en terreno de los municipios listados, y respaldo
+       institucional para las donaciones de equipos: es justo lo que exigen
+       quienes donan, y sin una organizacion acreditada esa puerta no se abre.
+
+COMO DECIRNOS QUE SI, SIN COMPLICACIONES
+
+Una llamada o un WhatsApp al {TELEFONO_PUENTE} basta. Y despues, como
+ustedes prefieran:
+
+  · Hacemos de puente: recibimos los equipos y coordinamos la entrega con la
+    Cruz Roja Colombiana o la Defensa Civil, y les mandamos foto y ubicacion
+    de cada terminal instalado.
+  · O lo hacen ustedes directamente: les pasamos el mapa, los datos y los
+    contactos de las alcaldias, y se encargan sin intermediarios.
+
+Nos parece igual de buena la segunda opcion que la primera. Lo que hace falta
+es que el internet llegue, no que aparezcamos nosotros.
 
 QUE HACE FALTA EXACTAMENTE, QUE NO ES LO MISMO EN TODAS PARTES
 
@@ -1156,15 +1293,23 @@ condiciones, para quien coordine la respuesta. Se actualiza cada pocos minutos.
 {mapa_linea}
 {metodo}
 
-Como derecho de peticion, solicito respuesta dentro de los terminos del
-articulo 14 de la Ley 1755 de 2015.
+A las entidades del Estado: esta comunicacion se radica tambien como derecho
+de peticion (art. 23 de la Constitucion), con solicitud de respuesta dentro de
+los terminos del articulo 14 de la Ley 1755 de 2015.
 
 Esto no es una linea de emergencia y no sustituye al 123. Es un aporte de
-datos hecho de buena fe por un ciudadano.
+datos hecho de buena fe por gente que quiere ayudar.
 
-Agradezco su tiempo,
+Gracias por leer hasta aqui. Cualquier cosa, por pequena que sea, ayuda. Y si
+la respuesta es no, agradeceriamos igual que nos digan a quien mas podriamos
+escribirle.
+
+Con aprecio y gratitud,
 
 {_firma(remitente, 'es')}
+
+Telefono de coordinacion (llamada o WhatsApp, a cualquier hora):
+{TELEFONO_PUENTE}
 
 
 ═══════════════════════════════════════════════════════════════════════════
@@ -1190,10 +1335,16 @@ BLIND SPOTS — highest priority, no data exists for these:
 MEASURED LOSS OF POWER (satellite, ~610 m resolution):
 {_lista_en(ev['sin_luz'], 10)}
 
-What is requested: satellite terminals with autonomous power for the blind
-spots; guidance on the fastest viable route given Colombian customs and
-spectrum rules; and, from the Colombian authorities copied here, the formal
-Member State request that ITU assistance requires.
+What we are asking for: one STARLINK terminal per municipality —or any
+satellite link with its own power— plus guidance on the fastest viable route
+given Colombian customs and spectrum rules; and, from the Colombian
+authorities copied here, the formal Member State request that ITU assistance
+requires.
+
+To say yes, one call or WhatsApp message to {TELEFONO_PUENTE} is enough. We
+can act as the bridge and coordinate delivery with the Colombian Red Cross, or
+hand you the map and the local contacts so you can do it directly. What
+matters is that the internet arrives, not that we are in the picture.
 
 Offered in return: the full live map, its data feeds and its source code, free
 and unconditionally, to whoever coordinates the response.
