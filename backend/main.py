@@ -627,6 +627,81 @@ def mapa_lugares(
         raise HTTPException(502, f"No se pudo construir la vista: {type(e).__name__}: {e}")
 
 
+@app.get("/api/mapa/municipios", tags=["cortes"])
+def mapa_municipios(
+    mmi_min: float = Query(4.0, ge=2.0, le=9.0),
+    horas: int = Query(3, ge=1, le=48),
+    noches: int = Query(3, ge=1, le=7),
+) -> dict:
+    """**Todos los municipios afectados, agrupados por departamento.**
+
+    La lista completa y nombrada que hace falta para sustentar una petición:
+    los 1.122 municipios oficiales de geoBoundaries, filtrados a los que el
+    USGS modeló con sacudida, cada uno con su intensidad medida en su propio
+    punto, su energía por satélite y la red de su departamento.
+
+    Van **todos**, incluidos los que están sin novedad: una lista de la que
+    faltan municipios no sirve para sustentar nada, porque quien la recibe no
+    puede distinguir «no está» de «está bien».
+    """
+    try:
+        return fuentes.municipios_por_departamento(mmi_min, horas, noches)
+    except Exception as e:
+        raise HTTPException(502, f"No se pudo construir la vista: {type(e).__name__}: {e}")
+
+
+@app.get("/api/mapa/municipios.csv", tags=["entrega"])
+def mapa_municipios_csv(
+    mmi_min: float = Query(4.0, ge=2.0, le=9.0),
+    horas: int = Query(3, ge=1, le=48),
+) -> Response:
+    """El listado completo en CSV, para adjuntar a una petición o abrirlo en Excel.
+
+    Una carta que afirma cifras sin la tabla detrás se archiva. Con la tabla,
+    quien la recibe puede comprobar municipio por municipio.
+    """
+    try:
+        d = fuentes.municipios_por_departamento(mmi_min, horas)
+    except Exception as e:
+        raise HTTPException(502, f"No se pudo construir la tabla: {type(e).__name__}: {e}")
+
+    cols = ["departamento", "municipio", "poblacion_cabecera", "intensidad_mmi",
+            "estado", "que_necesita", "certeza", "energia_satelite",
+            "cambio_luz_pct", "red_departamento", "acceso_pct", "troncal_pct",
+            "punto_medicion", "lat", "lon"]
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+    w.writeheader()
+    for g in d["departamentos"]:
+        for m in g["municipios"]:
+            luz = m.get("luz") or {}
+            red = m.get("red_departamento") or {}
+            w.writerow({
+                "departamento": g["departamento"],
+                "municipio": m["nombre"],
+                "poblacion_cabecera": m["poblacion"] or "",
+                "intensidad_mmi": m["mmi"],
+                "estado": m["etiqueta"],
+                "que_necesita": m.get("necesita") or "",
+                "certeza": m["certeza"],
+                "energia_satelite": luz.get("clase") or "no medida",
+                "cambio_luz_pct": (luz.get("cambio_pct")
+                                   if luz.get("utilizable") else ""),
+                "red_departamento": red.get("clase") or "",
+                "acceso_pct": red.get("delta_acceso_pct", ""),
+                "troncal_pct": red.get("delta_troncal_pct", ""),
+                "punto_medicion": "casco urbano" if m.get("medible") else "centroide",
+                "lat": m["lat"], "lon": m["lon"],
+            })
+
+    nombre = f"hope_municipios_{datetime.now(timezone.utc):%Y%m%d_%H%M}.csv"
+    return Response(
+        content="﻿" + buf.getvalue(),      # BOM para Excel en Windows
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )
+
+
 @app.get("/api/cortes/sondas", tags=["cortes"])
 def cortes_sondas() -> dict:
     """Sondas RIPE Atlas: puntos individuales reales con coordenadas exactas,

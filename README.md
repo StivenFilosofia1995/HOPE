@@ -364,22 +364,47 @@ data/hope.db            Local, se crea sola. No versionar: tiene datos personale
 | `GET` | `/api/reportes.geojson` | Descarga para entrega (QGIS, ArcGIS, Google Earth) |
 | `GET` | `/api/reportes.csv` | Descarga para Excel (con BOM) |
 | `GET` | `/api/estadisticas` | Conteos por tipo/prioridad/estado |
-**Pueblo por pueblo — la vista de mayor resolución:**
+**Municipio por municipio — la vista de mayor resolución:**
 
 | Método | Ruta | |
 |---|---|---|
-| `GET` | `/api/mapa/lugares?mmi_min=5&horas=3` | **Los 263 poblados** que el USGS confirma sacudidos, cada uno con población, intensidad medida ahí mismo, luz por satélite, sondas físicas y red del departamento — y **con qué certeza** se afirma cada cosa |
+| `GET` | `/api/mapa/municipios?mmi_min=4` | **Los 586 municipios afectados agrupados por departamento**, todos nombrados |
+| `GET` | `/api/mapa/municipios.csv?mmi_min=4` | La misma tabla en CSV, para adjuntar a una petición |
+| `GET` | `/api/mapa/lugares?mmi_min=4` | Lo mismo sin agrupar, como lista plana para el mapa |
 
-Rompe el techo del departamento usando el producto PAGER del USGS, que publica
-cada poblado expuesto con su población y la sacudida interpolada en ese punto.
+Rompe el techo del departamento cruzando el listado **oficial** de municipios
+(geoBoundaries ADM2, 1.122) con la rejilla del ShakeMap, que da intensidad en
+cualquier punto, y con PAGER, que aporta el casco urbano y la población. Un
+alcalde o un CMGRD trabajan por municipio: una lista que dice «Pie de Pato»
+cuando el municipio se llama Alto Baudó no le sirve a quien firma el despacho.
+
+Van **todos** los municipios, incluidos los que están sin novedad: una lista de
+la que faltan municipios no sustenta nada, porque quien la recibe no puede
+distinguir «no está» de «está bien».
+
 De ahí sale la categoría que faltaba y que es la más accionable: el **punto
-ciego**, un pueblo que tembló fuerte y del que no existe ninguna medición
-local. Medidos: 23 poblados y 325.333 personas, entre ellos el epicentro.
-Un punto ciego no es un pueblo sin problemas — es uno sin datos.
+ciego**, un municipio que tembló fuerte y del que no existe ninguna medición
+local. Medidos: **34 municipios, 376.515 personas**, entre ellos el epicentro y
+18 de los 28 municipios del Chocó. Un punto ciego no es un municipio sin
+problemas — es uno sin datos.
 
-A los porcentajes de luz se les descuenta la **deriva del satélite** (−6,8%
-medido contra 376 poblados que apenas temblaron): sin esa resta, la fase lunar
-y las nubes marcaban 114 pueblos «sin luz» que no lo estaban. Ver FUENTES.md §8.
+Cada municipio dice de dónde salió su punto de medición, porque decide si la
+luz nocturna medida allí significa algo: **casco urbano** (557), **aproximado**
+(20 — el pueblo que cae dentro lleva el nombre de otro, típico de un borde
+simplificado) o **centroide** (545, que en el Chocó es selva). Solo se mide luz
+en los primeros: hacerlo en un centroide rural mediría oscuridad de monte y se
+inventaría 545 apagones.
+
+A los porcentajes de luz se les descuenta la **deriva del satélite** (−7,3%
+medido contra los municipios que apenas temblaron): sin esa resta, la fase
+lunar y las nubes marcaban 114 pueblos «sin luz» que no lo estaban.
+
+Y los umbrales tampoco son números redondos: salen del **ruido del propio grupo
+de control**. «Sin luz» exige caer por debajo de su percentil 2 y «poca luz»,
+del percentil 10, lo que fija la tasa de error por construcción — de cada 100
+municipios marcados «sin luz», unos 2 lo estarán por ruido. Con el umbral fijo
+de −35% que se usaba antes, el 3% del grupo de control (donde no se cayó nada)
+salía «sin luz» y el 11% «poca luz». Ver FUENTES.md §8.
 
 **Pedir conectividad (`/enlaces.html`):**
 

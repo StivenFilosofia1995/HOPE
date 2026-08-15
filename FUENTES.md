@@ -403,6 +403,81 @@ suele ser justo lo contrario. Antes se veía igual que uno comprobado sano.
 
 Endpoint: `GET /api/mapa/lugares?mmi_min=5&horas=3&noches=3`
 
+---
+
+## 9. geoBoundaries ADM2 — los 1.122 municipios, y el umbral que sale del ruido
+
+Verificado el 2026-08-15.
+
+PAGER da lugares poblados de un gacetero, no la división administrativa. Quien
+firma un despacho trabaja por MUNICIPIO, así que la base pasa a ser el listado
+oficial:
+
+```
+https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/
+  gbOpen/COL/ADM2/geoBoundaries-COL-ADM2_simplified.geojson      (10,1 MB, 1.122)
+```
+
+Se cruza con PAGER (casco urbano y población) y con la rejilla del ShakeMap
+`coverage_mmi_medium_res.covjson` (343×342 nodos cada ~2 km, 470 KB), que da
+intensidad en CUALQUIER punto y no solo en los 624 de PAGER. Comprobada contra
+PAGER donde ambos coinciden: Pereira 7,8 contra 7,87; Quibdó 7,7 contra 7,78.
+
+Resultado: **586 municipios afectados (MMI ≥ 4) en 20 departamentos**.
+Script: `herramientas/preparar_municipios.py` → `web/data/municipios.json`.
+
+### El punto de medición, y por qué hay tres clases
+
+| clase | n | qué significa |
+|-------|---|----------------|
+| `poblado`    | 557 | Hay casco urbano de PAGER dentro y su nombre concuerda. La luz medida ahí significa algo. |
+| `aproximado` |  20 | Cae uno dentro, pero con nombre de otro municipio. Con bordes simplificados eso es el pueblo VECINO. |
+| `centroide`  | 545 | No hay ninguno. El centro geométrico, que en el Chocó es selva. |
+
+**Solo se mide luz en los 557.** Medir en un centroide rural mide oscuridad de
+monte, y en un `aproximado` se le atribuiría a un municipio el alumbrado de
+otro. Los otros 565 quedan como no medibles, que es lo que son.
+
+Separar `aproximado` de `poblado` no es trivial y hacerlo mal falla en las dos
+direcciones: «Don Matías / Donmatias» y «El Litoral del San Juán (Docordó) /
+Santa Genoveva de Docordó» son el MISMO sitio escrito distinto, mientras que
+«Sotaquirá / Paipa» y «Rondón / Zetaquira» son pueblos distintos. Se resuelve
+por palabras compartidas de ≥4 letras: las variantes siempre comparten el
+nombre propio, los pueblos distintos no comparten ninguno.
+
+### Los umbrales de apagón salen del ruido, no de un número redondo
+
+Ya con la deriva de §8 descontada, se midió la dispersión DENTRO del grupo de
+control —municipios donde el sismo no rompió nada:
+
+| percentil | p1 | p5 | p10 | p25 | p50 | p75 | p90 |
+|---|---|---|---|---|---|---|---|
+| cambio | −63,2% | −25,7% | −20,4% | −8,9% | **+0,5%** | +6,6% | +9,3% |
+
+Y la señal real por franja de intensidad, ya corregida:
+
+| MMI | 4,0–4,5 | 4,5–5,0 | 5,0–5,5 | 5,5–6,0 | 6,0–6,5 | 6,5+ |
+|---|---|---|---|---|---|---|
+| mediana | +0,5% | +3,2% | +6,5% | −1,9% | −2,1% | **−5,4%** |
+
+**La señal existe pero vive dentro del ruido:** −5,4% de efecto contra ±20% de
+dispersión. Con el umbral fijo de −35% que se usaba antes, **el 3% del grupo de
+control salía «sin luz» y el 11% «poca luz»** — sobre 586 municipios, decenas
+de apagones inventados en sitios donde no pasó nada.
+
+Por eso el umbral se calibra contra el propio control: «sin luz» exige caer por
+debajo de su **percentil 2** y «poca luz», del **percentil 10**. Medidos el
+2026-08-15 con 123 municipios de control: **−42,5%** y **−22,8%**. Eso fija la
+tasa de falsos positivos por construcción (2% y 10%) y la respuesta la publica
+en `deriva_luz.falsos_positivos_esperados`, en vez de dejar que el lector se la
+imagine.
+
+Consecuencia práctica: los «sin luz» pasan de 114 (umbral crudo) a 40 (con
+deriva) a **22** (con umbral calibrado). Los tres números salen de los mismos
+datos; solo el último es defendible.
+
+Endpoints: `GET /api/mapa/municipios?mmi_min=4` y `.csv` para adjuntar.
+
 ## Operadores eléctricos y telcos: buscado a fondo el 2026-08-13
 
 La pregunta obvia es «¿por qué no pegarse directo a la API del operador que

@@ -1730,7 +1730,7 @@ def radar_cloudflare(dias: int = 7) -> dict:
 # dentro, y del que no existe ni una sola medición local. No es que esté bien.
 # Es que nadie lo ha mirado.
 
-PAGER_MMI_MIN = 5.0      # MMI 5: lo siente todo el mundo, se caen objetos
+PAGER_MMI_MIN = 4.0      # MMI 4: lo siente todo el mundo dentro de casa
 USGS_EVENTO = "us6000tjl2"
 
 # Radio dentro del cual una sonda RIPE dice algo del poblado. Una sonda mide SU
@@ -1919,6 +1919,96 @@ def _que_hace_falta(clase: str, red_zona: Optional[dict]) -> str:
     return ""
 
 
+# ── El catálogo oficial: los 1.122 municipios, no 624 poblados ─────────────
+#
+# PAGER da lugares poblados de un gacetero, no la división administrativa. Y
+# quien firma un despacho trabaja por MUNICIPIO: una lista que dice «Pie de
+# Pato» cuando el municipio se llama Bajo Baudó no le sirve a un alcalde ni a
+# un CMGRD.
+#
+# `web/data/municipios.json` cruza las dos cosas (lo prepara
+# herramientas/preparar_municipios.py): los 1.122 municipios de geoBoundaries,
+# cada uno con el mejor punto de medición que exista.
+#
+#   punto "poblado"   — hay un casco urbano de PAGER dentro del municipio. La
+#                       luz nocturna medida ahí significa algo. Son 577.
+#   punto "centroide" — no lo hay: se usa el centro geométrico, que en el Chocó
+#                       suele ser selva. Medir luz ahí mide oscuridad de monte,
+#                       no un apagón, así que NO se mide y el municipio queda
+#                       como no medible. Son 545.
+#
+# Esa distinción es la que evita inventar 545 apagones en zona rural.
+
+_MUNICIPIOS: Optional[list] = None
+
+
+def municipios_catalogo() -> list[dict]:
+    """Los municipios con su punto de medición. Se leen una vez."""
+    global _MUNICIPIOS
+    if _MUNICIPIOS is None:
+        ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "web", "data", "municipios.json")
+        with open(ruta, encoding="utf-8") as f:
+            _MUNICIPIOS = json.load(f).get("municipios", [])
+    return _MUNICIPIOS
+
+
+# ── Intensidad en cualquier punto, no solo en los poblados de PAGER ────────
+#
+# PAGER trae el MMI de sus 624 lugares. Para los otros 498 municipios hace
+# falta la rejilla del ShakeMap: 343 × 342 nodos cada ~2 km sobre toda la zona.
+# Comprobada contra PAGER en los puntos que ambos cubren — Pereira 7,8 contra
+# 7,87; Quibdó 7,7 contra 7,78.
+#
+# Queda en memoria y no en la caché de SQLite: son 117.306 números, y
+# serializarlos a JSON en cada consulta costaría más que volver a bajarlos.
+
+SHAKEMAP_MMI = "download/coverage_mmi_medium_res.covjson"
+_REJILLA_MMI: Optional[dict] = None
+
+
+def _rejilla_mmi() -> Optional[dict]:
+    global _REJILLA_MMI
+    if _REJILLA_MMI is not None:
+        return _REJILLA_MMI or None
+    try:
+        contenidos = _producto_usgs("shakemap")
+        entrada = contenidos.get(SHAKEMAP_MMI)
+        if not entrada or not entrada.get("url"):
+            raise RuntimeError("el ShakeMap no publica la cobertura de MMI")
+        c = _get(entrada["url"])
+        ax = c["domain"]["axes"]
+        _REJILLA_MMI = {
+            "x0": ax["x"]["start"], "x1": ax["x"]["stop"], "nx": ax["x"]["num"],
+            "y0": ax["y"]["start"], "y1": ax["y"]["stop"], "ny": ax["y"]["num"],
+            "v": c["ranges"]["MMI"]["values"],
+        }
+    except Exception:
+        _REJILLA_MMI = {}          # se recuerda el fallo para no reintentar en bucle
+        return None
+    return _REJILLA_MMI
+
+
+def mmi_en(lat: float, lon: float) -> Optional[float]:
+    """Intensidad Mercalli del ShakeMap en ese punto, o None si cae fuera.
+
+    Fuera de la rejilla significa que el USGS no modeló sacudida allí, es
+    decir, que fue despreciable. No es lo mismo que «no se sabe».
+    """
+    r = _rejilla_mmi()
+    if not r:
+        return None
+    dx = (r["x1"] - r["x0"]) / (r["nx"] - 1)
+    dy = (r["y1"] - r["y0"]) / (r["ny"] - 1)
+    ix = round((lon - r["x0"]) / dx)
+    iy = round((lat - r["y0"]) / dy)
+    if not (0 <= ix < r["nx"] and 0 <= iy < r["ny"]):
+        return None
+    v = r["v"][iy * r["nx"] + ix]
+    return round(float(v), 2) if isinstance(v, (int, float)) else None
+
+
+
 def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
                    noches: int = 3) -> dict:
     """Estado poblado por poblado, fusionando todas las fuentes del sistema.
@@ -1940,32 +2030,32 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
 
     fallos: dict[str, str] = {}
 
-    # 1. La rejilla de lugares. Sin ella no hay nada que fusionar: es la única
-    #    fuente cuyo fallo sí es fatal para esta vista.
+    # 1. El catálogo oficial de municipios. Sin él no hay nada que fusionar:
+    #    es la única fuente cuyo fallo sí es fatal para esta vista.
     #
-    #    Se piden desde MMI 4 aunque se vayan a mostrar desde MMI 5: los que
-    #    apenas temblaron son el grupo de control con el que se mide la deriva
-    #    del satélite. Sin ellos no hay contra qué comparar y el -12% de fondo
-    #    se leería como apagón nacional. Cuestan siete teselas más.
-    base = usgs_lugares(min(mmi_min, MMI_CONTROL))
-    lugares = [dict(l) for l in base["lugares"]]
-
-    # 2. Nombres legibles y departamento por POLÍGONO real, no por centroide
-    #    más cercano: con centroides, una sonda de Medellín caía en Caldas.
-    try:
-        ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                            "web", "data", "ciudades.json")
-        with open(ruta, encoding="utf-8") as f:
-            _nombres_bonitos(lugares, json.load(f).get("ciudades", []))
-    except Exception:
-        pass
-
-    for l in lugares:
-        cod = departamento_de(l["lat"], l["lon"])
-        l["codigo_depto"] = cod
-        l["departamento"] = (DEPARTAMENTOS.get(cod, {}).get("nombre")
-                             or l.get("departamento_catalogo") or "")
-        l.pop("departamento_catalogo", None)
+    #    El departamento ya viene resuelto por polígono desde la herramienta
+    #    que prepara el archivo, no por cercanía a un centroide: con centroides,
+    #    los municipios de frontera caen en el departamento vecino.
+    lugares = []
+    for m in municipios_catalogo():
+        mmi = mmi_en(m["lat"], m["lon"])
+        if mmi is None:
+            # Fuera de la rejilla del ShakeMap: el USGS no modeló sacudida
+            # allí. No se arrastra por toda la consulta un municipio que no
+            # sintió el sismo.
+            continue
+        lugares.append({
+            "nombre": m["nombre"],
+            "nombre_poblado": m.get("nombre_poblado") or "",
+            "lat": m["lat"], "lon": m["lon"],
+            "mmi": mmi,
+            "poblacion": m.get("poblacion") or 0,
+            "codigo_depto": m.get("depto"),
+            "departamento": m.get("departamento") or "",
+            # De dónde salió el punto. Decide si la luz nocturna medida ahí
+            # significa algo o es oscuridad de monte.
+            "punto": m.get("punto", "centroide"),
+        })
 
     # 3. Red por departamento (IODA). Es lo que hay: no baja de departamento.
     #    Va marcada como HEREDADA en cada lugar para que nadie la lea como local.
@@ -1981,13 +2071,22 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
     except Exception as e:
         fallos["red_departamento"] = f"{type(e).__name__}: {e}"
 
-    # 4. Luz por poblado (satélite, ~610 m). La única medición verdaderamente
+    # 4. Luz por municipio (satélite, ~610 m). La única medición verdaderamente
     #    local de energía que existe sin esperar los dos días de rezago de XM.
+    #
+    #    Solo se miden los que tienen casco urbano identificado. En un municipio
+    #    del que solo se conoce el centroide, ese punto suele ser selva: saldría
+    #    oscuro todas las noches, antes y después del sismo, y clasificarlo como
+    #    apagón sería inventarse 545 cortes. Ni siquiera se piden esas teselas.
+    # Solo los de casco urbano VERIFICADO. Los «aproximados» tienen dentro el
+    # pueblo de al lado por culpa de un borde simplificado: medir allí sería
+    # atribuirle a un municipio el alumbrado de otro.
+    con_casco = [l for l in lugares if l["punto"] == "poblado"]
     luz_por_lugar: dict[tuple, dict] = {}
     try:
         medidos = luces_municipios(
             [{"nombre": l["nombre"], "departamento": l["departamento"],
-              "lat": l["lat"], "lon": l["lon"]} for l in lugares], noches)
+              "lat": l["lat"], "lon": l["lon"]} for l in con_casco], noches)
         for m in medidos.get("municipios", []):
             luz_por_lugar[(round(m["lat"], 4), round(m["lon"], 4))] = m
     except Exception as e:
@@ -2005,20 +2104,53 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
     #    Ver el bloque de arriba: sin restarla, el -12% de fondo pinta como
     #    apagón medio país. Solo entran confianzas útiles, porque un pueblo que
     #    parte de casi nada de luz mete ruido enorme en la mediana.
-    control = sorted(
-        m["cambio_pct"] for cl, m in
-        ((luz_por_lugar.get((round(l["lat"], 4), round(l["lon"], 4))), l)
-         for l in lugares)
-        for m in [cl] if m
-        if l["mmi"] < DERIVA_MMI_MAX
-        and m.get("cambio_pct") is not None
-        and m.get("confianza") in CONFIANZA_UTIL)
+    control = []
+    for l in lugares:
+        if l["mmi"] >= DERIVA_MMI_MAX:
+            continue                     # ese sí pudo perder luz por el sismo
+        med = luz_por_lugar.get((round(l["lat"], 4), round(l["lon"], 4)))
+        if not med or med.get("cambio_pct") is None:
+            continue
+        if med.get("confianza") not in CONFIANZA_UTIL:
+            continue                     # ruido: mete basura en la mediana
+        control.append(med["cambio_pct"])
+    control.sort()
 
+    def _pct(xs: list[float], p: float) -> Optional[float]:
+        """Percentil sobre una lista ya ordenada."""
+        if not xs:
+            return None
+        return xs[min(len(xs) - 1, int(len(xs) * p / 100))]
+
+    umbral_sin = umbral_poca = None
     if len(control) >= CONTROL_MINIMO:
         n = len(control)
         deriva = (control[n // 2] if n % 2
                   else (control[n // 2 - 1] + control[n // 2]) / 2)
         deriva = round(deriva, 1)
+
+        # ── Los umbrales salen del ruido, no de un número redondo ──────────
+        #
+        # Medido el 2026-08-15: dentro del propio grupo de control —municipios
+        # donde el sismo no rompió nada— la dispersión es enorme. Ya con la
+        # deriva descontada, su percentil 10 estaba en -20% y su percentil 1 en
+        # -63%. Con el umbral fijo de -35% que se usaba antes, el 3% del
+        # control se habría marcado «sin luz» y el 11% «poca luz»: sobre 586
+        # municipios, decenas de apagones inventados.
+        #
+        # Y la señal verdadera es pequeña: la mediana a MMI 6,5+ es -5,4%
+        # contra +0,5% del control. Existe, pero vive dentro del ruido.
+        #
+        # Así que el umbral se calibra contra el propio control: «sin luz»
+        # exige caer por debajo del 2% de los municipios comparables, y «poca
+        # luz», por debajo del 10%. Eso fija la tasa de falsos positivos por
+        # construcción —2% y 10%— y la respuesta la publica, en vez de dejar
+        # que el lector se la imagine.
+        #
+        # El tope de -20% es un suelo de sentido común: aunque el control
+        # saliera clavadísimo, no se va a llamar apagón a una caída del 8%.
+        umbral_sin = min(round(_pct(control, 2), 1), -20.0)
+        umbral_poca = min(round(_pct(control, 10), 1), -12.0)
     else:
         # Sin control suficiente no se puede separar apagón de fase lunar. Se
         # dice, y la luz deja de usarse para clasificar. Un «no sé» honesto vale
@@ -2030,14 +2162,29 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
             f"apagón de un cambio de luna o de nubosidad, así que la capa de "
             f"luz no se usa para clasificar en esta consulta.")
 
-    def leer_luz(m: Optional[dict]) -> Optional[dict]:
+    def leer_luz(m: Optional[dict], punto: str) -> Optional[dict]:
         """Traduce la medida cruda del satélite a algo afirmable, ya sin deriva.
 
         Devuelve `utilizable: False` cuando el número existe pero no significa
         nada — que es distinto de que no haya número, y muy distinto de que el
-        pueblo esté bien.
+        municipio esté bien.
         """
         if not m:
+            # No es que el satélite fallara: es que no hay a qué apuntar. Decirlo
+            # así evita que alguien lea el hueco como «aquí no pasa nada».
+            if punto == "centroide":
+                return {"utilizable": False, "clase": "sin_punto",
+                        "lectura": "No se conoce la ubicación del casco urbano de "
+                                   "este municipio, así que no hay dónde medir la "
+                                   "luz. Medir en el centro geométrico daría la "
+                                   "oscuridad del monte, no la del pueblo."}
+            if punto == "aproximado":
+                return {"utilizable": False, "clase": "sin_punto",
+                        "lectura": "El único casco urbano que cae dentro de este "
+                                   "municipio lleva el nombre de otro: con bordes "
+                                   "simplificados suele ser el pueblo vecino. "
+                                   "Medir su luz sería atribuirle a este municipio "
+                                   "el alumbrado de otro."}
             return None
         crudo = m.get("cambio_pct")
         conf = m.get("confianza")
@@ -2055,14 +2202,17 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
                                         "que no la tenga."}
 
         ajustado = round(crudo - deriva, 1)
-        if ajustado <= -35:
+        if ajustado <= umbral_sin:
             clase_luz, lectura = "sin_luz", (
-                f"Perdió {abs(ajustado):.0f}% más luz que los pueblos que apenas "
-                f"temblaron. Compatible con un apagón extenso.")
-        elif ajustado <= -15:
+                f"Perdió {abs(ajustado):.0f}% de luz nocturna: cae por debajo "
+                f"del 98% de los municipios comparables que apenas temblaron. "
+                f"Compatible con un apagón extenso.")
+        elif ajustado <= umbral_poca:
             clase_luz, lectura = "poca_luz", (
-                f"Perdió {abs(ajustado):.0f}% más luz que los pueblos que apenas "
-                f"temblaron. Compatible con un apagón parcial o por sectores.")
+                f"Perdió {abs(ajustado):.0f}% de luz nocturna: cae por debajo "
+                f"del 90% de los municipios comparables. Compatible con un "
+                f"apagón parcial, pero uno de cada diez municipios sin daño "
+                f"marca así por ruido de la medida — hay que confirmarlo.")
         elif ajustado >= 15:
             clase_luz, lectura = "mas_luz", (
                 f"Tiene {ajustado:.0f}% más luz que sus comparables. Puede ser "
@@ -2079,7 +2229,8 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
 
     # ── Fusión ──────────────────────────────────────────────────────────────
     for l in lugares:
-        luz = leer_luz(luz_por_lugar.get((round(l["lat"], 4), round(l["lon"], 4))))
+        luz = leer_luz(luz_por_lugar.get((round(l["lat"], 4), round(l["lon"], 4))),
+                       l["punto"])
 
         cerca = sorted(((_km(l["lat"], l["lon"], s["lat"], s["lon"]), s)
                         for s in sondas), key=lambda t: t[0])
@@ -2148,6 +2299,7 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
             "necesita": necesita,
             "necesita_texto": NECESIDAD_TEXTO.get(necesita, ""),
             "luz": luz,
+            "medible": l["punto"] == "poblado",
             "red_local": sonda,
             "red_departamento": zona,
         })
@@ -2167,7 +2319,9 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
 
     res = {
         "fuentes": [
-            "USGS PAGER / ShakeMap — poblados, población y sacudida (LOCAL)",
+            "geoBoundaries ADM2 — los 1.122 municipios oficiales",
+            "USGS ShakeMap — intensidad en el punto de cada municipio (LOCAL)",
+            "USGS PAGER — casco urbano y población de 577 de ellos (LOCAL)",
             "NASA VIIRS Black Marble vía GIBS — luz nocturna ~610 m (LOCAL)",
             "RIPE Atlas — sondas físicas individuales (LOCAL)",
             "IODA (Georgia Tech) — red por departamento (HEREDADA)",
@@ -2179,6 +2333,17 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
             "valor_pct": deriva,
             "poblados_de_control": len(control),
             "mmi_maximo_control": DERIVA_MMI_MAX,
+            "umbral_sin_luz_pct": umbral_sin,
+            "umbral_poca_luz_pct": umbral_poca,
+            "falsos_positivos_esperados": (
+                "Los umbrales son percentiles del grupo de control, así que la "
+                "tasa de error está fijada por construcción: de cada 100 "
+                "municipios marcados «sin luz», unos 2 lo estarán por ruido de "
+                "la medida; de cada 100 marcados «poca luz», unos 10. La señal "
+                "real es pequeña —la mediana a MMI 6,5+ es -5,4% contra +0,5% "
+                "del control— y vive dentro de ese ruido. Sirve para priorizar "
+                "a quién llamar primero, no como prueba de que hay un apagón."
+                if umbral_sin is not None else None),
             "que_es": (
                 "Cuánto bajó la luz nocturna en los poblados que apenas "
                 "temblaron. Como allí no se cayó nada, ese cambio es del "
@@ -2218,3 +2383,74 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
     }
     _cache_guardar(clave, res)
     return res
+
+
+def municipios_por_departamento(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
+                                noches: int = 3) -> dict:
+    """Lo mismo que `mapa_precision`, pero agrupado como trabaja quien decide.
+
+    Un alcalde, un CMGRD o un ministerio no piensan en «los 586 municipios
+    afectados»: piensan en «mis municipios». Esta vista los ordena por
+    departamento, con todos nombrados —incluidos los que están bien, porque una
+    lista de la que faltan municipios no sirve para sustentar nada— y con el
+    recuento de lo que hay que atender en cada uno.
+    """
+    d = mapa_precision(mmi_min, horas, noches)
+
+    grupos: dict[str, dict] = {}
+    for l in d["lugares"]:
+        nombre = l["departamento"] or "(sin departamento asignado)"
+        g = grupos.setdefault(nombre, {
+            "departamento": nombre,
+            "codigo": l.get("codigo_depto"),
+            "municipios": [],
+            "poblacion": 0,
+            "mmi_max": 0.0,
+            "por_clase": {},
+            "sin_medicion_local": 0,
+            "red": None,
+        })
+        g["municipios"].append(l)
+        g["poblacion"] += l["poblacion"]
+        g["mmi_max"] = max(g["mmi_max"], l["mmi"])
+        g["por_clase"][l["clase"]] = g["por_clase"].get(l["clase"], 0) + 1
+        if l["certeza"] != "local":
+            g["sin_medicion_local"] += 1
+        # El estado de red es del departamento entero: se guarda una vez, no
+        # repetido en cada municipio del listado.
+        if g["red"] is None and l.get("red_departamento"):
+            g["red"] = l["red_departamento"]
+
+    for g in grupos.values():
+        g["municipios"].sort(key=lambda m: (RANGO_LUGAR.get(m["clase"], 9),
+                                            -m["poblacion"], m["nombre"]))
+        g["total"] = len(g["municipios"])
+        g["por_atender"] = sum(n for c, n in g["por_clase"].items()
+                               if c in ("sin_luz_y_sin_red", "sin_luz",
+                                        "sin_red", "punto_ciego"))
+
+    # Primero el departamento con más municipios por atender; a igualdad, el que
+    # más fuerte tembló. Es el orden en que alguien los llamaría por teléfono.
+    orden = sorted(grupos.values(),
+                   key=lambda g: (-g["por_atender"], -g["mmi_max"]))
+
+    return {
+        "consultado": d["consultado"],
+        "fuentes": d["fuentes"],
+        "parametros": d["parametros"],
+        "deriva_luz": d["deriva_luz"],
+        "fallos": d["fallos"],
+        "resumen": {**d["resumen"], "departamentos": len(orden)},
+        "como_leer": d["como_leer"],
+        "advertencia": d["advertencia"],
+        "nota_cobertura": (
+            "Van TODOS los municipios de cada departamento con sacudida "
+            "modelada por el USGS, incluidos los que están sin novedad. Una "
+            "lista de la que faltan municipios no sirve para sustentar una "
+            "petición: quien la reciba no puede distinguir «no está» de «está "
+            "bien». Los municipios fuera de la rejilla del ShakeMap no "
+            "aparecen porque allí el USGS no modeló sacudida, es decir, fue "
+            "despreciable."
+        ),
+        "departamentos": orden,
+    }

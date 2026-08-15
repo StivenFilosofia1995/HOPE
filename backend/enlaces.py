@@ -573,10 +573,10 @@ METODO_ES = (
     "CÓMO SE MIDIÓ, Y QUÉ NO SE PUEDE AFIRMAR\n"
     "  - Sacudida y población: producto PAGER/ShakeMap del USGS para el evento\n"
     "    {evento}. La intensidad está interpolada en la coordenada de cada\n"
-    "    poblado, no promediada por departamento.\n"
+    "    municipio, no promediada por departamento.\n"
     "  - Energía: banda día-noche VIIRS de la NASA (Black Marble corregido),\n"
     "    resolución ~610 m. A cada porcentaje se le descontó la deriva del\n"
-    "    satélite ({deriva}%), medida en {n_control} poblados que apenas\n"
+    "    satélite ({deriva}%), medida en {n_control} municipios que apenas\n"
     "    temblaron: sin esa resta, la fase lunar y las nubes se leen como\n"
     "    apagón. Aun así, una noche muy nublada limita la medida.\n"
     "  - Red: IODA (Georgia Tech), series de 5-10 minutos, comparadas contra la\n"
@@ -597,7 +597,7 @@ METODO_EN = (
     "    coordinates, not averaged over a province.\n"
     "  - Power: NASA VIIRS day-night band (BRDF-corrected Black Marble), ~610 m\n"
     "    resolution. Each percentage has the satellite's own drift ({deriva}%)\n"
-    "    subtracted, measured across {n_control} places that barely shook —\n"
+    "    subtracted, measured across {n_control} municipalities that barely shook —\n"
     "    without that correction, moon phase and clouds read as a blackout.\n"
     "    Heavy cloud cover still limits the measurement.\n"
     "  - Network: IODA (Georgia Tech), 5-10 minute series compared against the\n"
@@ -670,7 +670,7 @@ de equipos de emergencia.
 
 Por eso se solicita, en orden de urgencia:
 
-  1. Que se curse la solicitud formal de asistencia a la UIT, con los poblados
+  1. Que se curse la solicitud formal de asistencia a la UIT, con los municipios
      de este documento como base técnica.
   2. Facilitación aduanera y de espectro para el ingreso de terminales
      satelitales donadas, invocando el Convenio de Tampere.
@@ -705,10 +705,10 @@ than an estimate.
 
 WHAT WE MEASURED
 We fused four independent public sources down to the level of individual
-populated places: {r.get('lugares', 0)} towns, {r.get('poblacion_expuesta', 0):,} people
-exposed. The finding that matters:
+the official municipality list: {r.get('lugares', 0)} municipalities,
+{r.get('poblacion_expuesta', 0):,} people exposed. The finding that matters:
 
-  {n_ciegos} populated places, home to {p_ciegos:,} people, shook at MMI 6 or
+  {n_ciegos} municipalities, home to {p_ciegos:,} people, shook at MMI 6 or
   above and have NO local measurement of any kind. Not "they are fine" —
   nobody has measured them.{remate_en}
 
@@ -766,11 +766,11 @@ El 10 de agosto de 2026 un sismo de magnitud 7.4 golpeó el Chocó (evento USGS
 conectividad de emergencia, y lo hago con mediciones, no con estimaciones.
 
 QUÉ SE MIDIÓ
-Se cruzaron cuatro fuentes públicas independientes hasta el nivel de poblado:
-{r.get('lugares', 0)} localidades, {_mil(r.get('poblacion_expuesta', 0))} personas expuestas.
+Se cruzaron cuatro fuentes públicas independientes sobre el listado oficial de
+municipios: {r.get('lugares', 0)} municipios, {_mil(r.get('poblacion_expuesta', 0))} personas expuestas.
 El hallazgo que importa:
 
-  {n_ciegos} poblados, donde viven {_mil(p_ciegos)} personas, temblaron a
+  {n_ciegos} municipios, donde viven {_mil(p_ciegos)} personas, temblaron a
   intensidad MMI 6 o más y NO tienen ninguna medición local. No es que estén
   bien: es que nadie los ha mirado.{remate_es}
 
@@ -924,8 +924,8 @@ energia. No es que se sepa que estan bien: es que nadie los ha mirado.{epi}
 Algunos: {nombres}.
 
 Esto sale de cruzar cuatro fuentes publicas -USGS PAGER/ShakeMap, satelite
-VIIRS de la NASA, sondas RIPE Atlas e IODA de Georgia Tech- poblado por
-poblado. Son datos verificables, no estimaciones.
+VIIRS de la NASA, sondas RIPE Atlas e IODA de Georgia Tech- sobre el listado
+oficial de municipios. Son datos verificables, no estimaciones.
 
 SOLICITO:
 
@@ -1004,10 +1004,10 @@ verificables, no con estimaciones.
 
 LO QUE ESTA MEDIDO
 
-Se cruzaron cuatro fuentes publicas independientes hasta el nivel de poblado:
-{r.get('lugares', 0)} localidades, {_mil(r.get('poblacion_expuesta', 0))} personas dentro de la zona sacudida.
+Se cruzaron cuatro fuentes publicas independientes sobre el listado oficial de
+municipios: {r.get('lugares', 0)} municipios, {_mil(r.get('poblacion_expuesta', 0))} personas en la zona sacudida.
 
-  {n_ciegos} poblados, donde viven {_mil(p_ciegos)} personas, temblaron a
+  {n_ciegos} municipios, donde viven {_mil(p_ciegos)} personas, temblaron a
   intensidad MMI 6 o mas y NO tienen NINGUNA medicion local. No es que se
   sepa que estan bien: es que nadie los ha mirado.{
   ' Entre ellos esta San Jose del Palmar, que es el epicentro mismo.'
@@ -1086,7 +1086,7 @@ telecommunications organisations in the same message, on purpose.
 Four independent public sources were fused down to the level of individual
 populated places: {r.get('lugares', 0)} towns, {r.get('poblacion_expuesta', 0):,} people exposed.
 
-  {n_ciegos} populated places, home to {p_ciegos:,} people, shook at MMI 6 or
+  {n_ciegos} municipalities, home to {p_ciegos:,} people, shook at MMI 6 or
   above and have NO local measurement of any kind. Not "they are fine" —
   nobody has measured them.{
   ' Among them is San Jose del Palmar, the epicentre itself.'

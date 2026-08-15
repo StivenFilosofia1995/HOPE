@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HOPE — Municipios afectados, uno por uno · Sismo M7.4 Chocó</title>
+  <meta name="description" content="Todos los municipios afectados por el sismo M7.4 del Chocó, departamento por departamento, con su energía y su conectividad medidas." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="enlaces.css" />
+  <link rel="stylesheet" href="municipios.css" />
+</head>
+<body class="pagina-enlaces">
+
+<header class="cabecera">
+  <div class="cabecera-in">
+    <div>
+      <p class="sobrelinea">SISMO M7.4 · CHOCÓ · 10 DE AGOSTO DE 2026</p>
+      <h1>Municipios, uno por uno</h1>
+    </div>
+    <div class="cabecera-enlaces">
+      <a class="btn btn-sec" href="index.html">← Mapa</a>
+      <a class="btn btn-pedir" href="enlaces.html">Pedir internet →</a>
+    </div>
+  </div>
+</header>
+
+<main class="envoltura">
+
+  <section class="tarjeta intro">
+    <p class="grande">Todos los municipios con sacudida modelada por el USGS,
+      agrupados por departamento y <strong>nombrados uno por uno</strong>, con
+      su energía y su conectividad.</p>
+    <p class="hint">Van <strong>todos</strong>, también los que están sin
+      novedad. Una lista de la que faltan municipios no sirve para sustentar
+      nada: quien la recibe no puede distinguir «no está» de «está bien».</p>
+    <div id="resumen" class="evidencia"><p class="cargando">Midiendo…</p></div>
+    <div id="fallos"></div>
+  </section>
+
+  <section class="tarjeta barra-filtros">
+    <label>Departamento
+      <select id="f-depto"><option value="">todos</option></select>
+    </label>
+    <label>Intensidad mínima
+      <select id="f-mmi">
+        <option value="4">MMI 4 — lo sintió todo el mundo</option>
+        <option value="5">MMI 5 — se cayeron objetos</option>
+        <option value="6">MMI 6 — daño leve en construcciones</option>
+        <option value="3">MMI 3 — apenas perceptible</option>
+      </select>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="f-atender" /> Solo los que hay que atender
+    </label>
+    <a id="btn-csv" class="btn btn-sec" href="#">Descargar tabla (CSV)</a>
+  </section>
+
+  <div id="departamentos"></div>
+
+  <section class="tarjeta nota-final">
+    <h2>Cómo leer esta tabla</h2>
+    <ul>
+      <li><b>Certeza</b> es lo más importante. <b>Local</b> = se midió en ese
+        municipio. <b>Heredada</b> = solo se conoce el promedio de su
+        departamento, que no distingue un municipio de otro. <b>Ninguna</b> =
+        nadie lo ha mirado.</li>
+      <li>Un <b>punto ciego</b> no es un municipio sin problemas: es uno sin
+        datos, y suele ser lo contrario.</li>
+      <li>La <b>energía</b> es luz nocturna por satélite y solo se puede medir
+        donde se conoce el casco urbano. En los demás el punto disponible es el
+        centro geométrico del municipio, que en zona rural es monte: medir allí
+        daría oscuridad de selva, no un apagón, así que no se mide.</li>
+      <li>La <b>red</b> es de IODA y su granularidad máxima en Colombia es el
+        departamento. Es la misma para todos los municipios de un departamento y
+        va marcada como heredada.</li>
+      <li id="nota-umbrales" class="umbral-nota"></li>
+    </ul>
+  </section>
+
+</main>
+
+<div id="toast" class="toast" hidden></div>
+<script src="municipios.js"></script>
+</body>
+</html>
