@@ -1790,6 +1790,18 @@ def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
+def _clave_nombre(s: str) -> str:
+    """Nombre de municipio comparable: sin tildes, sin puntuación, sin lo que va
+    entre paréntesis. geoBoundaries escribe «Alto Baudó (Pie De Pato)» y la
+    prensa escribe «Alto Baudó»; sin esto no se cruzan."""
+    import unicodedata
+    s = (s or "").split("(")[0]
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return "".join(c for c in s.lower() if c.isalnum())
+
+
+
 def _producto_usgs(nombre: str) -> dict:
     """Contenidos de un producto del evento, resolviendo su URL versionada.
 
@@ -2104,6 +2116,27 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
     except Exception as e:
         fallos["luz_satelital"] = f"{type(e).__name__}: {e}"
 
+    # 4b. Lo que dijo la prensa de municipios concretos.
+    #
+    #     No es una medición y no se mezcla con las que sí lo son. Va aparte, con
+    #     su medio y su fecha, porque hace algo que ninguna medición puede hacer:
+    #     confirmar un PUNTO CIEGO. Un municipio del que los instrumentos dicen
+    #     «no sé» y del que un periodista dice «está incomunicado» ya no es una
+    #     hipótesis — es la evidencia más fuerte que este sistema produce, y es
+    #     la que pesa dentro de una carta.
+    prensa_por_muni: dict[str, dict] = {}
+    try:
+        ruta_p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "web", "data", "reportes_prensa.json")
+        with open(ruta_p, encoding="utf-8") as f:
+            doc_prensa = json.load(f)
+        for r in doc_prensa.get("municipios", []):
+            prensa_por_muni[_clave_nombre(r["municipio"])] = r
+            if r.get("alias"):
+                prensa_por_muni.setdefault(_clave_nombre(r["alias"]), r)
+    except Exception as e:
+        fallos["prensa"] = f"{type(e).__name__}: {e}"
+
     # 5. Sondas físicas. Una sonda conectada es la prueba más dura de que en ese
     #    punto hay internet AHORA: es un aparato hablando con RIPE ahora mismo.
     sondas: list[dict] = []
@@ -2312,6 +2345,7 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
             "necesita_texto": NECESIDAD_TEXTO.get(necesita, ""),
             "luz": luz,
             "medible": l["punto"] == "poblado",
+            "prensa": prensa_por_muni.get(_clave_nombre(l["nombre"])),
             "red_local": sonda,
             "red_departamento": zona,
         })
@@ -2377,6 +2411,12 @@ def mapa_precision(mmi_min: float = PAGER_MMI_MIN, horas: int = 3,
             "sin_ninguna_medicion": sum(1 for l in lugares if l["certeza"] == "ninguna"),
             "puntos_ciegos": len(ciegos),
             "poblacion_en_puntos_ciegos": sum(l["poblacion"] for l in ciegos),
+            # El cruce que convierte una hipótesis en evidencia: los
+            # instrumentos no saben nada de este municipio Y un periodista
+            # informó que está incomunicado o sin luz.
+            "ciegos_confirmados_por_prensa": sum(1 for l in ciegos if l.get("prensa")),
+            "poblacion_ciegos_confirmados": sum(l["poblacion"] for l in ciegos
+                                                if l.get("prensa")),
         },
         "como_leer": (
             "Cada lugar dice con qué CERTEZA se afirma lo suyo. `local` = se "

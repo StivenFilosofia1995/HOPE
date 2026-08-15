@@ -518,6 +518,18 @@ def reunir_evidencia(mmi_min: float = 5.0, horas: int = 3) -> dict:
                 for l in lugares if l["clase"] in clases][:n]
 
     ciegos = top(("punto_ciego",))
+
+    # Los puntos ciegos que además confirmó un medio. Es la evidencia más
+    # fuerte que produce el sistema y merece su propio bloque en la carta: los
+    # instrumentos dicen «no sé» y un periodista dice «está incomunicado». Una
+    # sola de las dos cosas se discute; las dos juntas, no.
+    confirmados = [{
+        "nombre": l["nombre"], "departamento": l["departamento"],
+        "poblacion": l["poblacion"], "mmi": l["mmi"],
+        "estado": ", ".join((l["prensa"].get("estado") or [])).replace("_", " "),
+        "medio": l["prensa"].get("medio", ""),
+        "fecha": l["prensa"].get("fecha", ""),
+    } for l in lugares if l["clase"] == "punto_ciego" and l.get("prensa")]
     sin_luz = top(("sin_luz", "sin_luz_y_sin_red"))
     sin_red = top(("sin_red", "sin_luz_y_sin_red"))
 
@@ -540,6 +552,7 @@ def reunir_evidencia(mmi_min: float = 5.0, horas: int = 3) -> dict:
         "personas_ciegas": r.get("poblacion_en_puntos_ciegos", 0),
         "personas_expuestas": r.get("poblacion_expuesta", 0),
         "epicentro_ciego": epicentro_ciego,
+        "ciegos_confirmados": confirmados,
         # Una cifra que HOPE no puede calcular —hace falta cruzar el ShakeMap
         # con una rejilla global de población— y que viene de un organismo con
         # nombre. En una petición formal eso pesa más que cualquier número
@@ -649,6 +662,30 @@ def redactar(dest_id: str, evidencia: dict, remitente: dict,
         "n_control": deriva.get("poblados_de_control", 0),
     }
 
+    # El bloque más fuerte de la carta: donde la medición y el periodismo
+    # coinciden. Va con el nombre del medio y la fecha, para que el destinatario
+    # pueda ir a comprobarlo él mismo en un minuto.
+    conf = ev.get("ciegos_confirmados") or []
+    confirmados_es = ""
+    if conf:
+        filas = "\n".join(
+            f"  - {c['nombre']}{', ' + c['departamento'] if c['departamento'] else ''} "
+            f"— {c['estado']} ({c['medio']}, {c['fecha']})" for c in conf[:8])
+        confirmados_es = (
+            "\n\nY DE OCHO DE ELLOS YA HAY CONFIRMACIÓN PERIODÍSTICA\n"
+            "No es que la medición sospeche: es que un medio ya lo publicó, y "
+            "aun así\nsiguen sin ninguna medición instrumental.\n\n" + filas + "\n")
+    confirmados_en = ""
+    if conf:
+        filas_en = "\n".join(
+            f"  - {c['nombre']}{', ' + c['departamento'] if c['departamento'] else ''} "
+            f"— {c['estado']} ({c['medio']}, {c['fecha']})" for c in conf[:8])
+        confirmados_en = (
+            "\n\nAND FOR EIGHT OF THEM THE PRESS HAS ALREADY CONFIRMED IT\n"
+            "This is not a suspicion drawn from the measurements: a news outlet "
+            "already\nreported it, and they still have no instrumental "
+            "measurement at all.\n\n" + filas_en + "\n")
+
     # Respaldo de un tercero. Va justo detrás de nuestras cifras porque es lo
     # que las sostiene: quien recibe la carta puede comprobarlo sin fiarse.
     g = ev.get("gdacs") or {}
@@ -742,7 +779,7 @@ the official municipality list: {r.get('lugares', 0)} municipalities,
   nobody has measured them.{remate_en}{respaldo_en}
 
 BLIND SPOTS — highest priority, no data exists for these:
-{_lista_en(ev['puntos_ciegos'])}
+{_lista_en(ev['puntos_ciegos'])}{confirmados_en}
 
 MEASURED LOSS OF POWER (satellite, ~610 m resolution):
 {_lista_en(ev['sin_luz'])}
@@ -804,7 +841,7 @@ El hallazgo que importa:
   bien: es que nadie los ha mirado.{remate_es}{respaldo_es}
 
 PUNTOS CIEGOS — máxima prioridad, no existe dato de estos lugares:
-{_lista(ev['puntos_ciegos'])}
+{_lista(ev['puntos_ciegos'])}{confirmados_es}
 
 PÉRDIDA DE ENERGÍA MEDIDA POR SATÉLITE (resolución ~610 m):
 {_lista(ev['sin_luz'])}
@@ -1021,6 +1058,21 @@ def carta_conjunta(evidencia: dict, remitente: dict, url_mapa: str = "") -> dict
     mapa_linea = f"\nMapa en vivo, con los datos y el metodo abiertos: {url_mapa}\n" \
                  if url_mapa else ""
 
+    # Donde la medición y el periodismo coinciden. Con medio y fecha, para que
+    # el destinatario pueda comprobarlo él mismo en un minuto en vez de tener
+    # que confiar en nosotros.
+    conf = ev.get("ciegos_confirmados") or []
+    confirmados = ""
+    if conf:
+        filas = "\n".join(
+            f"  - {c['nombre']}{', ' + c['departamento'] if c['departamento'] else ''} "
+            f"- {c['estado']} ({c['medio']}, {c['fecha']})" for c in conf[:8])
+        confirmados = (
+            f"\n\nDE {len(conf)} DE ELLOS YA HAY CONFIRMACION PERIODISTICA\n"
+            "No es que la medicion sospeche: un medio ya lo publico, y aun asi\n"
+            "siguen sin ninguna medicion instrumental que diga como estan hoy.\n\n"
+            + filas + "\n")
+
     cuerpo = f"""DERECHO DE PETICION (art. 23 de la Constitucion Politica de Colombia)
 y solicitud de asistencia internacional en telecomunicaciones de emergencia
 
@@ -1054,7 +1106,7 @@ municipios: {r.get('lugares', 0)} municipios, {_mil(r.get('poblacion_expuesta', 
   if epicentro_ciego else ''}
 
 MUNICIPIOS DE LOS QUE NO SE SABE NADA (maxima prioridad):
-{_lista(ev['puntos_ciegos'], 12)}
+{_lista(ev['puntos_ciegos'], 12)}{confirmados}
 
 MUNICIPIOS CON PERDIDA DE ENERGIA MEDIDA POR SATELITE:
 {_lista(ev['sin_luz'], 10)}

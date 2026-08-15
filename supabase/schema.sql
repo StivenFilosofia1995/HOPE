@@ -297,3 +297,264 @@ grant select on public.resumen_zonas to anon, authenticated;
 --    where pubname='supabase_realtime' and schemaname='public';
 --   -- deben salir zonas y aportes, y NO contactos
 -- =====================================================================
+
+-- =====================================================================
+-- PARTE 2 — LO QUE FALTABA: memoria, catálogo y campaña
+-- =====================================================================
+--
+-- Todo lo de arriba guarda lo que la GENTE reporta. Nada guardaba lo que el
+-- sistema MIDE, y esa es la carencia que más duele: hoy todo se calcula en
+-- vivo y se olvida. Consecuencias concretas, las tres reales:
+--
+--   · Cuando IODA se cae —y se cayó el 13 y otra vez el 15 de agosto— no
+--     queda nada. El panel enseña la última medición buena que tenga en
+--     caché y, si la caché expiró, nada.
+--   · No se puede responder «¿desde cuándo está Tadó sin luz?». Y «lleva
+--     tres días» pesa muchísimo más en una carta que «hoy no tiene».
+--   · No se puede demostrar una recuperación ni una recaída.
+--
+-- Se añaden cuatro tablas. Ninguna toca las de arriba.
+--
+--   municipios        catálogo oficial, para que todo lo demás lo referencie
+--   mediciones        la historia: una fila por municipio y consulta
+--   reportes_prensa   lo que dijo un medio de un municipio, con enlace
+--   peticiones        el contador de la campaña de cartas
+--
+-- PRIVACIDAD: ninguna de las cuatro admite datos personales. `peticiones`
+-- guarda a quién se le escribió y desde qué ciudad, nunca quién escribió.
+-- =====================================================================
+
+-- ── Catálogo de municipios ───────────────────────────────────────────
+-- Se carga con herramientas/preparar_municipios.py. Es referencia, no algo
+-- que la gente edite: por eso anon lee y no escribe.
+
+create table if not exists public.municipios (
+  id            bigserial primary key,
+  nombre        text not null,
+  departamento  text not null default '',
+  codigo_depto  integer,
+  lat           double precision not null check (lat between -4.3 and 13.5),
+  lon           double precision not null check (lon between -82.0 and -66.8),
+  -- De dónde salió el punto de medición. Decide si la luz nocturna medida
+  -- ahí significa algo o es la oscuridad del monte.
+  --   poblado    → casco urbano identificado y con nombre concordante
+  --   aproximado → cae dentro un poblado con nombre de OTRO municipio
+  --   centroide  → centro geométrico; en el Chocó, selva
+  punto         text not null default 'centroide'
+                check (punto in ('poblado', 'aproximado', 'centroide')),
+  poblacion     integer check (poblacion >= 0),
+  creado_en     timestamptz not null default now(),
+  unique (nombre, departamento)
+);
+
+comment on table public.municipios is
+  'Los 1.122 municipios oficiales (geoBoundaries ADM2) con su mejor punto de '
+  'medición. La población es la del casco urbano según USGS PAGER, NO la del '
+  'municipio entero: sirve para ordenar por magnitud, no como censo.';
+
+create index if not exists ix_municipios_depto on public.municipios (departamento);
+
+-- ── Mediciones: la memoria del sistema ───────────────────────────────
+
+create table if not exists public.mediciones (
+  id             bigserial primary key,
+  municipio_id   bigint references public.municipios(id) on delete cascade,
+  municipio      text not null,              -- desnormalizado a propósito, ver abajo
+  departamento   text not null default '',
+  medido_en      timestamptz not null default now(),
+
+  mmi            real,                       -- intensidad ShakeMap en el punto
+  clase          text not null,              -- sin_luz | punto_ciego | …
+  certeza        text not null,              -- local | heredada | ninguna
+  necesita       text not null default '',   -- ENERGIA | RED | ENLACE | …
+
+  luz_cambio_pct       real,                 -- ya con la deriva descontada
+  luz_utilizable       boolean not null default false,
+  red_clase            text,                 -- del departamento: es heredada
+  red_acceso_pct       real,
+  red_troncal_pct      real,
+  sondas_cerca         integer not null default 0,
+  sonda_responde       boolean,
+
+  -- Los umbrales con los que se clasificó ESTA fila. Sin ellos, comparar dos
+  -- días distintos es comparar dos reglas distintas y no significa nada: los
+  -- umbrales se recalibran en cada consulta contra el grupo de control.
+  deriva_pct           real,
+  umbral_sin_luz_pct   real,
+  umbral_poca_luz_pct  real
+);
+
+comment on table public.mediciones is
+  'Una fila por municipio y consulta. Es la memoria que el sistema no tenía: '
+  'permite responder «desde cuándo» y sobrevive a que la fuente se caiga.';
+
+-- El nombre va desnormalizado además del id: si algún día se recarga el
+-- catálogo y cambian los ids, la historia no puede quedarse huérfana. En una
+-- serie histórica, perder a qué municipio se refería una fila es perderla.
+
+create index if not exists ix_mediciones_muni  on public.mediciones (municipio, medido_en desc);
+create index if not exists ix_mediciones_fecha on public.mediciones (medido_en desc);
+create index if not exists ix_mediciones_clase on public.mediciones (clase);
+
+-- ── Reportes de prensa ───────────────────────────────────────────────
+-- NO son mediciones y por eso viven aparte. Su valor es otro: confirmar un
+-- punto ciego. Instrumentos que dicen «no sé» + periodista que dice «está
+-- incomunicado» es la evidencia más fuerte que este sistema produce.
+
+create table if not exists public.reportes_prensa (
+  id            bigserial primary key,
+  municipio     text not null,
+  departamento  text not null default '',
+  estado        text[] not null default '{}',   -- incomunicado, sin_energia, …
+  detalle       text not null default '' check (length(detalle) <= 1000),
+  medio         text not null default '',
+  url           text not null default '',
+  fecha         date not null,
+  creado_en     timestamptz not null default now(),
+  unique (municipio, medio, fecha)
+);
+
+comment on table public.reportes_prensa is
+  'Lo que un medio publicó sobre un municipio, con enlace y fecha. La prensa '
+  'se contradice y se corrige: esto orienta la mirada, no confirma un hecho.';
+
+create index if not exists ix_prensa_muni on public.reportes_prensa (municipio);
+
+-- ── Peticiones: el contador de la campaña ────────────────────────────
+--
+-- Sin datos personales, y no es un descuido: quien manda una carta ya pone su
+-- nombre DENTRO de la carta, que va directo al destinatario. Repetirlo aquí
+-- crearía una lista pública de gente que le escribió al Estado, y eso no hace
+-- falta para nada. Lo único que aporta esta tabla es el número.
+--
+-- Y el número importa: «342 personas ya enviaron esta carta» es lo que
+-- convierte una petición suelta en una campaña.
+
+create table if not exists public.peticiones (
+  id             bigserial primary key,
+  destinatario   text not null check (length(destinatario) <= 60),  -- id: tsf, mintic…
+  via            text not null default 'conjunta'
+                 check (via in ('conjunta', 'individual')),
+  ciudad         text not null default '' check (length(ciudad) <= 120),
+  enviado_en     timestamptz not null default now()
+);
+
+comment on table public.peticiones is
+  'Contador de la campaña de cartas. SIN datos personales: solo a quién se '
+  'escribió, por qué vía y desde qué ciudad. Es AUTORREPORTADO —se registra '
+  'cuando alguien pulsa enviar— y no prueba que el correo saliera.';
+
+create index if not exists ix_peticiones_dest  on public.peticiones (destinatario);
+create index if not exists ix_peticiones_fecha on public.peticiones (enviado_en desc);
+
+-- El mismo freno que protege a zonas y aportes. Un contador público sin
+-- límite se infla en minutos, y un contador inflado destruye justo lo que lo
+-- hace útil: que el destinatario se crea el número.
+drop trigger if exists t_peticiones_freno on public.peticiones;
+create trigger t_peticiones_freno before insert on public.peticiones
+  for each row execute function public.freno_inundacion();
+
+-- ── Row Level Security ───────────────────────────────────────────────
+--
+-- `municipios`, `mediciones` y `reportes_prensa` las escribe el backend con
+-- service_role, que salta RLS. anon solo lee: son datos que se publican, no
+-- que se capturan. `peticiones` sí acepta inserción anónima, porque el
+-- contador se alimenta de quien manda la carta desde su navegador.
+
+alter table public.municipios      enable row level security;
+alter table public.mediciones      enable row level security;
+alter table public.reportes_prensa enable row level security;
+alter table public.peticiones      enable row level security;
+
+drop policy if exists municipios_lectura on public.municipios;
+create policy municipios_lectura on public.municipios
+  for select to anon, authenticated using (true);
+
+drop policy if exists mediciones_lectura on public.mediciones;
+create policy mediciones_lectura on public.mediciones
+  for select to anon, authenticated using (true);
+
+drop policy if exists prensa_lectura on public.reportes_prensa;
+create policy prensa_lectura on public.reportes_prensa
+  for select to anon, authenticated using (true);
+
+drop policy if exists peticiones_lectura on public.peticiones;
+create policy peticiones_lectura on public.peticiones
+  for select to anon, authenticated using (true);
+
+drop policy if exists peticiones_insercion on public.peticiones;
+create policy peticiones_insercion on public.peticiones
+  for insert to anon, authenticated with check (true);
+
+-- Cinturón además de tirantes, igual que arriba: si alguien desactiva RLS por
+-- error, los privilegios de tabla siguen bloqueando la escritura.
+revoke insert, update, delete
+  on public.municipios, public.mediciones, public.reportes_prensa
+  from anon, authenticated;
+grant select
+  on public.municipios, public.mediciones, public.reportes_prensa
+  to anon, authenticated;
+
+revoke update, delete on public.peticiones from anon, authenticated;
+grant select, insert on public.peticiones to anon, authenticated;
+
+-- ── Vistas ───────────────────────────────────────────────────────────
+
+-- Lo último que se sabe de cada municipio, sin tener que ordenar a mano.
+create or replace view public.ultima_medicion as
+select distinct on (municipio)
+  municipio, departamento, medido_en, mmi, clase, certeza, necesita,
+  luz_cambio_pct, luz_utilizable, red_clase, sondas_cerca, sonda_responde
+from public.mediciones
+order by municipio, medido_en desc;
+
+grant select on public.ultima_medicion to anon, authenticated;
+
+-- Desde cuándo lleva así cada municipio. Es la pregunta que hoy no se puede
+-- responder, y la que convierte «no tiene luz» en «lleva tres días sin luz»,
+-- que es lo que mueve a alguien a cargar un camión.
+create or replace view public.racha_actual as
+with ordenado as (
+  select municipio, departamento, clase, medido_en,
+         lag(clase) over (partition by municipio order by medido_en) as clase_previa
+  from public.mediciones
+),
+cambios as (
+  select municipio, departamento, clase, medido_en
+  from ordenado
+  where clase_previa is distinct from clase
+)
+select distinct on (municipio)
+  municipio, departamento, clase,
+  medido_en                as desde,
+  now() - medido_en        as lleva
+from cambios
+order by municipio, medido_en desc;
+
+grant select on public.racha_actual to anon, authenticated;
+
+-- El contador de la campaña, agrupado por destinatario.
+create or replace view public.resumen_peticiones as
+select
+  destinatario,
+  count(*)                                                     as envios,
+  count(distinct ciudad) filter (where ciudad <> '')           as ciudades,
+  min(enviado_en)                                              as primera,
+  max(enviado_en)                                              as ultima
+from public.peticiones
+group by destinatario;
+
+grant select on public.resumen_peticiones to anon, authenticated;
+
+-- =====================================================================
+-- Comprobación de la parte 2:
+--
+--   select tablename, rowsecurity from pg_tables where schemaname='public'
+--    and tablename in ('municipios','mediciones','reportes_prensa','peticiones');
+--   -- las cuatro con rowsecurity = true
+--
+--   -- anon NO debe poder escribir mediciones:
+--   select has_table_privilege('anon','public.mediciones','INSERT');  -- false
+--   -- anon SÍ debe poder registrar una petición:
+--   select has_table_privilege('anon','public.peticiones','INSERT');  -- true
+-- =====================================================================

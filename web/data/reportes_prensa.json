@@ -1,0 +1,163 @@
+{
+  "_meta": {
+    "que_es": "Reportes de PRENSA sobre municipios concretos, con su medio, su fecha y su enlace. No son mediciones de instrumento ni partes oficiales verificados por HOPE.",
+    "por_que_existe": "El sistema mide infraestructura y marca como PUNTO CIEGO los municipios que temblaron fuerte y de los que no hay ninguna medición local. Un punto ciego con confirmación de prensa deja de ser una hipótesis: es un municipio del que sabemos, por una fuente humana, que está incomunicado. Esa combinación —medición que dice «no sé» más periodista que dice «está aislado»— es la evidencia más fuerte que este sistema puede producir, y es la que va en las cartas.",
+    "como_usarlo": "Cada entrada lleva su medio y su fecha. La prensa se contradice y se corrige: antes de mover un recurso, confirmar con la UNGRD, el CMGRD del municipio o la Cruz Roja.",
+    "recogido": "2026-08-15",
+    "advertencia_fechas": "Estos reportes son de los días 10 al 14 de agosto. La situación cambia: al 13 de agosto XM ya reportaba más del 95% de usuarios con energía restablecida, y el campo iba mucho más lento que las ciudades. Un reporte de hace tres días no describe hoy.",
+    "nota_clave_onu": "Naciones Unidas lo dijo con todas las letras el 12 de agosto: en Chocó «las dificultades de conexión, energía y acueducto están limitando la capacidad de conocer con precisión todas las necesidades de los municipios afectados». Eso es exactamente lo que este mapa llama punto ciego."
+  },
+
+  "nacional": {
+    "fecha_corte": "2026-08-14",
+    "fuente": "UNGRD, citada por El Heraldo",
+    "url": "https://www.elheraldo.co/colombia/2026/08/14/285-personas-fallecidas-y-102263-afectadas-deja-el-terremoto-en-15-departamentos-y-426-municipios/",
+    "fallecidos": 285,
+    "afectados": 102263,
+    "departamentos": 15,
+    "municipios": 426,
+    "nota_dispersion": "Las cifras varían entre medios el mismo día: El Tiempo publicó 281 fallecidos y 3.971 heridos citando a la UNGRD; Infobae, 284 fallecidos y 379 desaparecidos; otros medios hablan de 288 fallecidos y 448 municipios. Se toma la de UNGRD del 14 de agosto y se dice el rango en vez de escoger la más alta."
+  },
+
+  "energia_nacional": {
+    "fecha_corte": "2026-08-13",
+    "fuente": "XM, citada por El Heraldo",
+    "url": "https://www.elheraldo.co/colombia/2026/08/13/mas-del-95-de-los-usuarios-afectados-por-el-sismo-recupero-el-servicio-de-energia/",
+    "usuarios_recuperados": 1450000,
+    "usuarios_aun_sin_servicio": 75661,
+    "porcentaje_recuperado": 95,
+    "nota": "Más del 95% recuperado NO significa que el problema esté resuelto donde importa. Portafolio lo resumió el 13 de agosto: «casi el 100% de las ciudades recuperó servicios, pero el campo tardará semanas». Ese 5% restante es rural, y es justo donde este mapa tiene sus puntos ciegos."
+  },
+
+  "municipios": [
+    {
+      "municipio": "San José del Palmar",
+      "departamento": "Chocó",
+      "estado": ["incomunicado", "sin_energia", "sin_agua", "via_bloqueada"],
+      "detalle": "Epicentro. Aislamiento vial total por derrumbes, sin energía desde el sismo, sin acueducto. Más de 400 viviendas con daños y al menos 20 destruidas. La señal no es estable y se corta por periodos largos.",
+      "fecha": "2026-08-13",
+      "medio": "Noticias RCN",
+      "url": "https://www.noticiasrcn.com/colombia/cual-es-la-situacion-en-san-jose-del-palmar-epicentro-del-terremoto-1049795"
+    },
+    {
+      "municipio": "Nóvita",
+      "departamento": "Chocó",
+      "estado": ["incomunicado", "infraestructura"],
+      "detalle": "Quedó incomunicado tras el sismo. Colapsaron las dos cúpulas de la catedral.",
+      "fecha": "2026-08-13",
+      "medio": "El Colombiano",
+      "url": "https://www.elcolombiano.com/colombia/cronica-terremoto-colombia-san-jose-del-palmar-victimas-cifras-por-que-ocurrio-GA39820666"
+    },
+    {
+      "municipio": "Condoto",
+      "departamento": "Chocó",
+      "estado": ["incomunicado"],
+      "detalle": "Reportado como incomunicado junto con Nóvita e Istmina tras el sismo.",
+      "fecha": "2026-08-13",
+      "medio": "El Colombiano",
+      "url": "https://www.elcolombiano.com/colombia/cronica-terremoto-colombia-san-jose-del-palmar-victimas-cifras-por-que-ocurrio-GA39820666"
+    },
+    {
+      "municipio": "Istmina",
+      "departamento": "Chocó",
+      "estado": ["incomunicado"],
+      "detalle": "Reportado como incomunicado junto con Nóvita y Condoto tras el sismo.",
+      "fecha": "2026-08-13",
+      "medio": "El Colombiano",
+      "url": "https://www.elcolombiano.com/colombia/cronica-terremoto-colombia-san-jose-del-palmar-victimas-cifras-por-que-ocurrio-GA39820666"
+    },
+    {
+      "municipio": "Sipí",
+      "departamento": "Chocó",
+      "estado": ["afectacion_grave"],
+      "detalle": "Señalado junto con San José del Palmar como uno de los dos municipios más afectados del Chocó.",
+      "fecha": "2026-08-11",
+      "medio": "Infobae",
+      "url": "https://www.infobae.com/colombia/2026/08/11/balance-de-las-zonas-mas-afectadas-por-el-terremoto-en-colombia-esta-es-la-situacion-de-las-ciudades-en-alerta-roja/"
+    },
+    {
+      "municipio": "Alto Baudó",
+      "departamento": "Chocó",
+      "estado": ["afectacion_grave"],
+      "detalle": "Sus habitantes describieron las consecuencias del sismo como «monstruosas».",
+      "fecha": "2026-08-13",
+      "medio": "El Tiempo",
+      "url": "https://www.eltiempo.com/justicia/investigacion/el-terremoto-golpeo-con-fuerza-a-un-choco-incomunicado-entre-las-victimas-esta-el-hijo-del-alcalde-de-bahia-solano-3577455"
+    },
+    {
+      "municipio": "Bajo Baudó",
+      "departamento": "Chocó",
+      "estado": ["afectacion_grave"],
+      "detalle": "Sus habitantes describieron las consecuencias del sismo como «monstruosas».",
+      "fecha": "2026-08-13",
+      "medio": "El Tiempo",
+      "url": "https://www.eltiempo.com/justicia/investigacion/el-terremoto-golpeo-con-fuerza-a-un-choco-incomunicado-entre-las-victimas-esta-el-hijo-del-alcalde-de-bahia-solano-3577455"
+    },
+    {
+      "municipio": "Bahía Solano",
+      "departamento": "Chocó",
+      "estado": ["afectacion_grave"],
+      "detalle": "Entre las víctimas está el hijo del alcalde del municipio.",
+      "fecha": "2026-08-13",
+      "medio": "El Tiempo",
+      "url": "https://www.eltiempo.com/justicia/investigacion/el-terremoto-golpeo-con-fuerza-a-un-choco-incomunicado-entre-las-victimas-esta-el-hijo-del-alcalde-de-bahia-solano-3577455"
+    },
+    {
+      "municipio": "Quibdó",
+      "departamento": "Chocó",
+      "estado": ["sin_energia"],
+      "detalle": "DISPAC reportó suspensión total del servicio eléctrico en Quibdó y otros 16 municipios de su área de cobertura, por daños en infraestructura de transmisión y distribución.",
+      "fecha": "2026-08-10",
+      "medio": "La FM",
+      "url": "https://www.lafm.com.co/economia/terremoto-colombia-deja-sin-servicio-de-energia-a-choco-varias-regiones-afectadas-sismo-407386"
+    },
+    {
+      "municipio": "Tadó",
+      "departamento": "Chocó",
+      "estado": ["cuadrilla_desplegada", "sin_energia"],
+      "detalle": "DISPAC mantiene cuadrillas trabajando aquí en daños que exigen, entre otras cosas, instalación de postes nuevos.",
+      "fecha": "2026-08-14",
+      "medio": "Infobae",
+      "url": "https://www.infobae.com/colombia/2026/08/14/este-es-el-balance-del-resatablecimiento-de-servicios-publicos-en-las-zonas-afectadas-por-el-terremoto-persisten-danos-estructurales/"
+    },
+    {
+      "municipio": "Bagadó",
+      "departamento": "Chocó",
+      "estado": ["cuadrilla_desplegada", "sin_energia"],
+      "detalle": "DISPAC mantiene cuadrillas trabajando aquí, con instalación de postes nuevos.",
+      "fecha": "2026-08-14",
+      "medio": "Infobae",
+      "url": "https://www.infobae.com/colombia/2026/08/14/este-es-el-balance-del-resatablecimiento-de-servicios-publicos-en-las-zonas-afectadas-por-el-terremoto-persisten-danos-estructurales/"
+    },
+    {
+      "municipio": "El Cantón del San Pablo",
+      "alias": "Managrú",
+      "departamento": "Chocó",
+      "estado": ["cuadrilla_desplegada", "sin_energia"],
+      "detalle": "DISPAC mantiene cuadrillas en Managrú, su cabecera, con instalación de postes nuevos.",
+      "fecha": "2026-08-14",
+      "medio": "Infobae",
+      "url": "https://www.infobae.com/colombia/2026/08/14/este-es-el-balance-del-resatablecimiento-de-servicios-publicos-en-las-zonas-afectadas-por-el-terremoto-persisten-danos-estructurales/"
+    },
+    {
+      "municipio": "Río Quito",
+      "alias": "Paimadó",
+      "departamento": "Chocó",
+      "estado": ["cuadrilla_desplegada", "sin_energia"],
+      "detalle": "DISPAC mantiene cuadrillas en Paimadó, su cabecera, con instalación de postes nuevos.",
+      "fecha": "2026-08-14",
+      "medio": "Infobae",
+      "url": "https://www.infobae.com/colombia/2026/08/14/este-es-el-balance-del-resatablecimiento-de-servicios-publicos-en-las-zonas-afectadas-por-el-terremoto-persisten-danos-estructurales/"
+    }
+  ],
+
+  "departamentos": [
+    {
+      "departamento": "Chocó",
+      "detalle": "Tras el sismo, el 85% del departamento perdió energía. La Gobernación registró daños en servicio eléctrico y comunicaciones en distintas zonas.",
+      "fecha": "2026-08-11",
+      "medio": "El Colombiano",
+      "url": "https://www.elcolombiano.com/colombia/cronica-terremoto-colombia-san-jose-del-palmar-victimas-cifras-por-que-ocurrio-GA39820666"
+    }
+  ]
+}
